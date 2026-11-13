@@ -1,0 +1,206 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { GRADE_BANDS, normalizeCode, parseBasicCode, resolveGradeBand } from './normalize.mjs';
+import {
+  buildRoadmap, gradeBandOverview, resolveSubject, searchStandards, suggestSimilar,
+} from './search.mjs';
+
+const SERVER_INFO = { name: 'korean-special-education-learning-map', version: '0.0.1' };
+const ABOUT_URI = 'about://korean-special-education-learning-map';
+
+const SUBJECT = z.string().max(100).optional()
+  .describe('과목명 또는 과목 id (예: 국어, 진로와 직업, career-vocation)');
+const GRADE_BAND = z.string().max(40).optional()
+  .describe('학년군 (예: 초3~4, 중1~3, 고1~3, e3-4, 중학교)');
+const LIMIT = z.number().int().min(1).max(50).optional().describe('최대 결과 수 (기본 20)');
+const EMPTY_HINT =
+  '검색 결과가 없습니다. query를 더 짧은 핵심어로 바꾸거나 subject·gradeBand 필터를 확인하세요. 과목 목록은 list_subjects.';
+const DAILY_LIVING_NOTE =
+  '일상생활 활동은 영역과 내용을 학교가 정하도록 되어 있어 국가 수준 성취기준이 없습니다. 이 서버에는 수록되지 않습니다.';
+
+function ok(payload) {
+  return { content: [{ type: 'text', text: JSON.stringify(payload, null, 1) }] };
+}
+
+function fail(message, suggestions = []) {
+  const text = suggestions.length ? `${message} 유사 후보: ${suggestions.join(', ')}` : message;
+  return { content: [{ type: 'text', text }], isError: true };
+}
+
+function subjectIdOrThrow(store, input) {
+  if (!input) return undefined;
+  const hit = resolveSubject(store, input);
+  if (!hit) {
+    const names = store.subjects.map((s) => s.subjectKorean);
+    const similar = suggestSimilar(input, names);
+    throw new Error(
+      `과목 "${input}"을(를) 찾을 수 없습니다.${similar.length ? ` 유사 후보: ${similar.join(', ')}.` : ''} 전체 목록은 list_subjects.`
+    );
+  }
+  return hit.id;
+}
+
+function gradeBandOrThrow(input) {
+  if (!input) return undefined;
+  const id = resolveGradeBand(input);
+  if (!id) {
+    throw new Error(
+      `학년군 "${input}"을(를) 해석할 수 없습니다. 사용 가능: ${GRADE_BANDS.map((b) => `${b.short}(${b.id})`).join(', ')}`
+    );
+  }
+  return id;
+}
+
+function aboutText(store) {
+  const { taxonomyVersion, counts, sourceNotice } = store.manifest;
+  return [
+    '# 한국 특수교육 교육과정 학습지도 MCP 서버',
+    '',
+    `- 데이터 릴리스: ${taxonomyVersion}`,
+    `- 수량: 과목 ${counts.subjects} · 성취기준 ${counts.standards}`,
+    `- 수록 원문 기준 고시: ${(sourceNotice ?? []).join('; ')}`,
+    '- 성취기준 원문은 고시의 별책으로서 저작권법 제7조 제2호에 따라 보호받지 않는 저작물이며, 정확성·추적성을 위해 출처를 표기한다.',
+    '- 범위(v0.1): 기본 교육과정 교과 성취기준. 특수교육 전문 교과(직업·생활, 이료)와 공통·선택 중심 교육과정은 아직 수록되지 않았다.',
+    `- ${DAILY_LIVING_NOTE}`,
+    '- 영역명·과목 배정은 PDF 조판에서 기계 추출했으며 파이프라인 검증을 거쳤다. 원문은 고시 PDF와 대조할 것.',
+    '- 교육부·국가교육위원회·국립특수교육원의 공식 산출물이 아니며, 개별 학생을 진단하거나 개별화교육계획을 대신하지 않는다.',
+    '- 라이선스: MIT (코드·문서).',
+  ].join('\n');
+}
+
+export function createServer(store) {
+  const server = new McpServer(SERVER_INFO);
+
+  const guarded = (fn) => async (args) => {
+    try {
+      return await fn(args);
+    } catch (error) {
+      return fail(error.message);
+    }
+  };
+
+  server.registerResource(
+    'about',
+    ABOUT_URI,
+    { title: '데이터 출처·라이선스 안내', description: '릴리스, 수량, 근거 고시, 수록 범위', mimeType: 'text/markdown' },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: aboutText(store) }] })
+  );
+
+  server.registerTool(
+    'list_subjects',
+    {
+      title: '과목 목록',
+      description: '수록된 과목과 과목별 학년군·성취기준 수를 반환한다. 일상생활 활동은 국가 수준 성취기준이 없어 제외된다.',
+      inputSchema: {},
+    },
+    guarded(async () => ok({
+      release: store.manifest.taxonomyVersion,
+      subjects: store.subjects.map((s) => ({
+        id: s.id, subjectKorean: s.subjectKorean, category: s.category,
+        codePrefix: s.codePrefix, gradeBands: s.gradeBands, standardCount: s.standardCount,
+      })),
+      note: DAILY_LIVING_NOTE,
+    }))
+  );
+
+  server.registerTool(
+    'get_grade_band_overview',
+    {
+      title: '학년군 개요',
+      description:
+        'gradeBand를 주면 그 학년군의 과목별 영역·성취기준 수를 반환한다(개별화교육계획 범위 잡기용). 없으면 학년군 목록과 학년군별 성취기준 수를 반환한다.',
+      inputSchema: { gradeBand: GRADE_BAND },
+    },
+    guarded(async ({ gradeBand }) => {
+      const band = gradeBandOrThrow(gradeBand);
+      if (!band) {
+        return ok({
+          gradeBands: GRADE_BANDS.map((b) => ({
+            id: b.id, labelKorean: b.labelKorean, codeNumber: b.code,
+            standardCount: store.allStandards.filter((s) => s.gradeBand === b.id).length,
+          })),
+        });
+      }
+      const meta = GRADE_BANDS.find((b) => b.id === band);
+      return ok({ gradeBand: band, gradeBandKorean: meta.labelKorean, subjects: gradeBandOverview(store, band) });
+    })
+  );
+
+  server.registerTool(
+    'search_standards',
+    {
+      title: '성취기준 검색',
+      description:
+        '성취기준을 코드·키워드(원문 본문·영역명 포함)와 과목·학년군·영역 필터로 검색한다. 결과에 원문이 포함된다.',
+      inputSchema: {
+        query: z.string().max(200).optional().describe('키워드 또는 코드 (예: 화폐, 9진01-02)'),
+        subject: SUBJECT,
+        gradeBand: GRADE_BAND,
+        domain: z.string().max(100).optional().describe('영역명(부분 일치)'),
+        limit: LIMIT,
+      },
+    },
+    guarded(async ({ query, subject, gradeBand, domain, limit }) => {
+      const result = searchStandards(store, {
+        query, domain, limit,
+        subjectId: subjectIdOrThrow(store, subject),
+        gradeBand: gradeBandOrThrow(gradeBand),
+      });
+      if (result.total === 0) result.hint = EMPTY_HINT;
+      return ok(result);
+    })
+  );
+
+  server.registerTool(
+    'get_standard',
+    {
+      title: '성취기준 상세',
+      description: '성취기준 코드(공백·대시 이형 무관)로 공식 원문, 과목, 학년군, 영역, 근거 고시를 조회한다.',
+      inputSchema: { code: z.string().max(100).describe('성취기준 코드 (예: [4국01-01])') },
+    },
+    guarded(async ({ code }) => {
+      const normalized = normalizeCode(code);
+      const hits = store.standardsByCode.get(normalized) ?? [];
+      if (hits.length === 0) {
+        return fail(`성취기준 ${normalized}을(를) 찾을 수 없습니다.`,
+          suggestSimilar(normalized, [...store.standardsByCode.keys()]));
+      }
+      return ok({
+        results: hits.map((s) => ({
+          ...s,
+          officialText: store.textsByKey.get(s.key),
+          codeStructure: parseBasicCode(s.code),
+        })),
+      });
+    })
+  );
+
+  server.registerTool(
+    'get_learning_roadmap',
+    {
+      title: '과목 로드맵',
+      description:
+        '과목의 성취기준을 학년군 → 영역 → 성취기준 계층으로 반환한다. gradeBand로 한 학년군만 볼 수 있다. 고시 문서 순서이며 새 순서를 만들지 않는다.',
+      inputSchema: {
+        subject: z.string().max(100).describe('과목명 또는 과목 id'),
+        gradeBand: GRADE_BAND,
+      },
+    },
+    guarded(async ({ subject, gradeBand }) => {
+      const subjectId = subjectIdOrThrow(store, subject);
+      const roadmap = buildRoadmap(store, { subjectId, gradeBand: gradeBandOrThrow(gradeBand) });
+      const meta = store.subjectsById.get(subjectId);
+      if (roadmap.standardCount === 0) {
+        roadmap.hint = `${meta.subjectKorean}은(는) 이 학년군에 성취기준이 없습니다. 편성 학년군: ${meta.gradeBands.join(', ')}`;
+      }
+      return ok({ subjectId, subjectKorean: meta.subjectKorean, ...roadmap });
+    })
+  );
+
+  return server;
+}
+
+export const TOOL_NAMES = [
+  'get_grade_band_overview', 'get_learning_roadmap', 'get_standard', 'list_subjects', 'search_standards',
+];
+export { ABOUT_URI };

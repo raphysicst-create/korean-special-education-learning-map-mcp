@@ -1,0 +1,22 @@
+{
+  "annexes": [
+    {
+      "id": "moe-2022-34-annex3",
+      "notice": "교육부 고시 제2022-34호(2022.12.22.)",
+      "annexNo": 3,
+      "titleKorean": "기본 교육과정",
+      "category": "basic",
+      "url": "https://nise.go.kr/onmam/openapi/fileDown.do?fileSn=oZXmqchDx6q4fe5TJYtELA",
+      "sha256": null
+    }
+  ],
+  "amendments": [
+    {
+      "id": "nec-2024-4",
+      "notice": "국가교육위원회 고시 제2024-4호(2024.8.16.) 「특수교육 교육과정」 일부개정",
+      "status": "unverified",
+      "note": "이 개정이 별책 3(기본 교육과정) 성취기준을 바꿨는지 첫 실행 전에 확인한다. 바뀌었다면 NCIC의 개정 반영본 PDF로 annexes[0].url을 교체하고 sha256을 다시 고정한다."
+    }
+  ],
+  "note": "sha256이 null인 항목은 아직 고정되지 않은 것이다. 선생님 PC에서 `npm run pipeline:fetch -- --pin`을 한 번 실행하면 실제 해시가 기록되고, 이후 fetch는 해시 불일치를 거부한다. PDF는 PDF_DIR 환경 변수(기본: 저장소 부모 폴더)에서 파일명 [별책3] 패턴으로 찾고, 없으면 URL에서 내려받는다. 저장소에 커밋하지 않는다."
+}

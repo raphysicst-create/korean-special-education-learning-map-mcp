@@ -1,0 +1,30 @@
+{
+  "name": "korean-special-education-learning-map-mcp",
+  "version": "0.0.1",
+  "mcpName": "io.github.raphysicst-create/korean-special-education-learning-map-mcp",
+  "description": "한국 2022 개정 특수교육 교육과정(기본 교육과정) 성취기준 MCP 서버 — 공식 고시 원문 수록, 학년군 축 탐색",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/raphysicst-create/korean-special-education-learning-map-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/raphysicst-create/korean-special-education-learning-map-mcp.git"
+  },
+  "bin": {
+    "korean-special-education-learning-map-mcp": "src/cli.mjs"
+  },
+  "files": ["src/", "data/", "README.md", "LICENSE", "NOTICE.md", "RIGHTS.md"],
+  "engines": { "node": ">=20.11" },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "pipeline:fetch": "node pipeline/fetch-sources.mjs",
+    "pipeline:discover": "node pipeline/extract-standards.mjs --discover",
+    "pipeline:extract": "node pipeline/extract-standards.mjs",
+    "pipeline:verify": "node pipeline/verify.mjs",
+    "pipeline:verify:check": "node pipeline/verify.mjs --check"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.0"
+  }
+}

@@ -1,0 +1,5 @@
+{
+ "note": "성취기준 코드 접두어 → 과목 대응표. `npm run pipeline:discover` 결과(.cache/discovery-*.json)의 prefixes를 PDF 목차와 대조해 채운다. 추측으로 채우지 말 것 — 비어 있는 접두어는 extract가 unmapped-prefix로 실패시킨다. id는 영어 kebab-case.",
+ "candidateSubjects": ["바른 생활", "슬기로운 생활", "즐거운 생활", "국어", "사회", "수학", "과학", "실과", "진로와 직업", "체육", "음악", "미술", "(선택 과목 — 별책 3 목차로 확인)"],
+ "mappings": {}
+}
