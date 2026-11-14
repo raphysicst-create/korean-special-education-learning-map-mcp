@@ -102,6 +102,12 @@ test('get_standard: 원문·코드 구조·없는 코드 제안', async () => {
   assert.ok(miss.content[0].text.includes('[4국01-01]'));
 });
 
+test('get_operation_guidelines: 편성·운영 데이터가 없는 설치본은 오류로 알린다', async () => {
+  const r = await call(await connect(), 'get_operation_guidelines', {});
+  assert.ok(r.isError);
+  assert.ok(r.content[0].text.includes('편성·운영'));
+});
+
 test('get_learning_roadmap: 학년군 → 영역 → 성취기준', async () => {
   const client = await connect();
   const p = payload(await call(client, 'get_learning_roadmap', { subject: '국어' }));

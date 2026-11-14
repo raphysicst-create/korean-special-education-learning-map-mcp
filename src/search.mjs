@@ -1,4 +1,4 @@
-import { GRADE_BANDS, canonicalCode, normalizeText } from './normalize.mjs';
+import { GRADE_BANDS, canonicalCode, normalizeText, resolveGradeBand } from './normalize.mjs';
 
 export { normalizeText };
 
@@ -146,4 +146,44 @@ export function gradeBandOverview(store, gradeBand) {
       subjectId: e.subjectId, subjectKorean: e.subjectKorean, standardCount: e.standardCount,
       domains: [...e.domains.entries()].sort().map(([, name]) => name),
     }));
+}
+
+const LEVEL_ALIASES = [
+  ['elementary', /^(?:초|초등|초등학교|elementary|e)$/i],
+  ['middle', /^(?:중|중등|중학교|middle|m)$/i],
+  ['high', /^(?:고|고등|고등학교|high|h)$/i],
+];
+
+/**
+ * 학교급 입력(초등학교·중·high …) 또는 학년군(초3~4·e5-6 …)을 편성·운영 학교급으로 푼다.
+ * 학년군으로 주면 그 학년군의 배당표 열(focus)도 돌려준다. 못 풀면 null.
+ */
+export function resolveSchoolLevel(store, input) {
+  if (!store.operation || !input) return null;
+  const raw = String(input).normalize('NFC').trim().replace(/\s+/g, '');
+  const byId = (id) => store.operation.levels.find((l) => l.id === id) ?? null;
+  for (const [id, re] of LEVEL_ALIASES) if (re.test(raw)) return { level: byId(id), focus: null };
+  const band = resolveGradeBand(input);
+  if (!band) return null;
+  const level = store.operation.levels.find((l) => l.gradeBands.includes(band)) ?? null;
+  if (!level) return null;
+  return { level, focus: { gradeBand: band, column: level.allotment.columnByGradeBand?.[band] ?? null } };
+}
+
+/** 학년군의 배당 기준(교과(군)별 시수·학점과 소계·총계)을 그 학년군 열만 뽑아 돌려준다. */
+export function allotmentForBand(store, band) {
+  const level = store.operation?.levels.find((l) => l.gradeBands.includes(band));
+  if (!level) return null;
+  const a = level.allotment;
+  const column = a.columnByGradeBand?.[band];
+  if (!column) return null;
+  const subjects = a.breakdown?.[column]
+    ? a.breakdown[column].map((b) => ({ label: b.label, value: b.value }))
+    : a.rows.filter((r) => r.values[column] !== undefined).map((r) => ({ label: r.label, value: r.values[column] }));
+  return {
+    schoolLevel: level.labelKorean, tableNo: a.tableNo, title: a.title, unit: a.unit, column,
+    groupLabel: a.groupLabel, groups: subjects,
+    totals: a.totals.map((t) => ({ label: t.label, value: t.values[column] })),
+    ...(level.note && column === '1~2학년' ? { note: level.note } : {}),
+  };
 }

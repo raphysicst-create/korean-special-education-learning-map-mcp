@@ -23,8 +23,14 @@
 - 의존성:
   - zod를 4.x로 올렸다(GHSA-mrhx-c7xc-m3w5 해결).
   - MCP SDK 하한을 ^1.32.0으로 올렸다.
+- 【별책 1】 총론의 'Ⅲ-3. 기본 교육과정 편성·운영'(49~55쪽)을 수록했다(`data/kr/operation-guidelines.json`).
+  - 범위: 초·중·고 편제 14항, <표 9>~<표 11> 시간·학점 배당표와 주석 12개, 교육과정 편성·운영 기준 45항(세부 항목 포함).
+  - 원문 출처: 총론 PDF는 글자 단위로 줄을 바꿔 줄 이음을 되살릴 수 없다. 그래서 같은 고시의 HWP 판(NCIC 배포본, SHA-256 `6f50c7b6…4fe3`)에서 문단을 가져와 PDF(`d73a997e…4ced`)와 글자 단위로 대조한다.
+  - HWP 판독기(`pipeline/hwp-text.mjs`)는 Node 내장 zlib만 쓴다. Python olefile 판독 결과와 51,977자 전량이 같았다.
+  - 배당표: 사람이 옮긴 `pipeline/operation-tables.json`을 HWP 표 칸 순서와 대조하고, verify가 합계(교과(군) 합 = 소계, 소계 + 나머지 = 총계)를 검산한다. 3개 표 모두 PDF 지면 이미지와 칸 단위로 대조했다.
+  - 새 도구 `get_operation_guidelines`(학교급·학년군·부분 조회)를 추가했다. `get_grade_band_overview`는 그 학년군의 배당 열을 함께 준다.
 - 검색: 부분 코드 검색(`[9수학04`, `09생영01`)과 없는 코드 제안도 `canonicalCode` 기준으로 맞췄다.
-- 테스트 38건:
+- 테스트 49건:
   - 실측 발췌 fixture를 추가했다.
   - 출시 데이터 회귀 테스트(`tests/data.test.mjs`)를 추가했다.
 

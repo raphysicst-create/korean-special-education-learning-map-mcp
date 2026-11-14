@@ -23,5 +23,11 @@
     "wise-living": 11
    }
   }
+ },
+ "operation": {
+  "schoolLevels": 3,
+  "organizationItems": 14,
+  "criteriaItems": 45,
+  "tables": 3
  }
 }

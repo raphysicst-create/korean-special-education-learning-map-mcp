@@ -372,7 +372,7 @@ function main() {
   const allSubjects = [];
   const gates = { release: null, categories: {} };
   let failed = 0;
-  for (const annex of sources.annexes) {
+  for (const annex of sources.annexes.filter((a) => (a.role ?? 'standards') === 'standards')) {
     const pdfPath = pdfPaths[annex.id];
     if (!pdfPath) throw new Error(`${annex.id}의 PDF 경로가 없습니다 — pipeline:fetch를 먼저 실행하세요.`);
     const { records, duplicates, rejected } = extractStandards(pdftotext(pdfPath));

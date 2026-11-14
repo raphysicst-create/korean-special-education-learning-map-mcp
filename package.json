@@ -20,6 +20,7 @@
     "pipeline:fetch": "node pipeline/fetch-sources.mjs",
     "pipeline:discover": "node pipeline/extract-standards.mjs --discover",
     "pipeline:extract": "node pipeline/extract-standards.mjs",
+    "pipeline:operation": "node pipeline/extract-operation.mjs",
     "pipeline:verify": "node pipeline/verify.mjs",
     "pipeline:verify:check": "node pipeline/verify.mjs --check"
   },

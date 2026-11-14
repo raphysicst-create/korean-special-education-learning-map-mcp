@@ -59,8 +59,13 @@ export function createStore(dataDir = defaultDataDir) {
     standardsByKey.set(s.key, s);
   }
 
+  // 【별책 1】 기본 교육과정 편성·운영(편제·배당표·운영 기준). manifest에 있을 때만 싣는다.
+  const operation = manifest.files['operation-guidelines.json']
+    ? readVerified(dataDir, manifest, 'operation-guidelines.json')
+    : null;
+
   return {
-    manifest, subjects, categories, allStandards, textsByKey,
+    manifest, subjects, categories, allStandards, textsByKey, operation,
     standardsByCode, standardsByKey,
     subjectsById: new Map(subjects.map((s) => [s.id, s])),
     gradeBands: GRADE_BANDS,

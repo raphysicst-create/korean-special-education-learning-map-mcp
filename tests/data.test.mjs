@@ -79,3 +79,36 @@ test('data: 09 코드는 검색(완전·부분 일치)과 없는 코드 제안�
   assert.ok(miss.isError);
   assert.ok(miss.content[0].text.includes('[09수학04-0'), miss.content[0].text);
 });
+
+test('data: get_operation_guidelines — 학교급 목록·학년군 초점·부분 조회', async () => {
+  const client = await connect();
+  const overview = await call(client, 'get_operation_guidelines');
+  assert.deepEqual(overview.schoolLevels.map((l) => [l.id, l.allotment.tableNo, l.allotment.unit]),
+    [['elementary', '<표 9>', '시간'], ['middle', '<표 10>', '시간'], ['high', '<표 11>', '학점']]);
+  assert.equal(overview.schoolLevels[2].allotment.total.values['1~3학년'], '192');
+
+  const e34 = await call(client, 'get_operation_guidelines', { schoolLevel: '초3~4' });
+  assert.equal(e34.schoolLevel, '초등학교');
+  assert.deepEqual(e34.focus, { gradeBand: 'e3-4', column: '3~4학년' });
+  assert.equal(e34.allotment.rows.find((r) => r.label === '국어').values['3~4학년'], '340');
+  assert.equal(e34.criteria.items.length, 12);
+  assert.ok(e34.note.includes('2028년 3월 1일'));
+
+  const midCriteria = await call(client, 'get_operation_guidelines', { schoolLevel: '중학교', part: '운영 기준' });
+  assert.ok(midCriteria.criteria && !midCriteria.allotment && !midCriteria.organization);
+  assert.ok(midCriteria.criteria.items[8].text.includes('자유학기'));
+
+  const bad = await client.callTool({ name: 'get_operation_guidelines', arguments: { schoolLevel: '대학교' } });
+  assert.ok(bad.isError);
+});
+
+test('data: get_grade_band_overview가 그 학년군의 배당 기준을 함께 준다', async () => {
+  const client = await connect();
+  const e12 = await call(client, 'get_grade_band_overview', { gradeBand: '초1~2' });
+  assert.equal(e12.allotment.column, '1~2학년');
+  assert.deepEqual(e12.allotment.groups.find((g) => g.label === '건강한 생활'), { label: '건강한 생활', value: '120' });
+  assert.ok(e12.allotment.note.includes('2028년 3월 1일'));
+  const h = await call(client, 'get_grade_band_overview', { gradeBand: '고1~3' });
+  assert.equal(h.allotment.unit, '학점');
+  assert.deepEqual(h.allotment.totals.at(-1), { label: '총 이수 학점', value: '192' });
+});

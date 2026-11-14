@@ -4,7 +4,8 @@ import {
   GRADE_BANDS, canonicalCode, normalizeCode, parseBasicCode, resolveGradeBand,
 } from './normalize.mjs';
 import {
-  buildRoadmap, gradeBandOverview, resolveSubject, searchStandards, suggestSimilar,
+  allotmentForBand, buildRoadmap, gradeBandOverview, resolveSchoolLevel, resolveSubject,
+  searchStandards, suggestSimilar,
 } from './search.mjs';
 
 const SERVER_INFO = { name: 'korean-special-education-learning-map', version: '0.1.0' };
@@ -59,10 +60,11 @@ function aboutText(store) {
     '# 한국 특수교육 교육과정 학습지도 MCP 서버',
     '',
     `- 데이터 릴리스: ${taxonomyVersion}`,
-    `- 수량: 과목 ${counts.subjects} · 성취기준 ${counts.standards}`,
+    `- 수량: 과목 ${counts.subjects} · 성취기준 ${counts.standards}${counts.operation ? ` · 편성·운영 조항 ${counts.operation.organizationItems + counts.operation.criteriaItems}(배당표 ${counts.operation.tables})` : ''}`,
     `- 수록 원문 기준 고시: ${(sourceNotice ?? []).join('; ')}`,
     '- 성취기준 원문은 고시의 별책으로서 저작권법 제7조 제2호에 따라 보호받지 않는 저작물이며, 정확성·추적성을 위해 출처를 표기한다.',
-    '- 범위(v0.1): 기본 교육과정 교과 성취기준. 특수교육 전문 교과(직업·생활, 이료)와 공통·선택 중심 교육과정은 아직 수록되지 않았다.',
+    '- 범위(v0.1): 【별책 3】 기본 교육과정 교과 성취기준, 그리고 【별책 1】 총론 중 기본 교육과정 편성·운영(초·중·고 편제, <표 9>~<표 11> 시간·학점 배당표와 주석, 교육과정 편성·운영 기준 — get_operation_guidelines). 총론의 나머지, 특수교육 전문 교과(직업·생활, 이료), 공통·선택 중심 교육과정은 아직 수록되지 않았다.',
+    '- 편성·운영 조항 원문은 같은 고시의 HWP 판에서 문단 단위로 가져와 PDF와 대조했고, 배당표는 사람이 옮긴 뒤 HWP 표 칸과 대조하고 합계를 검산했다.',
     '- 수록 판본: 국가교육위원회 고시 제2026-2호(2026.1.21.) 일부개정 반영본. 이 개정으로 바뀐 초1~2 통합교과(건강한 생활 신설, 즐거운 생활 개편)는 2028.3.1. 시행이며, 그 전까지 학교 현장은 이전 고시(제2024-4호) 판을 따른다 — list_subjects의 note 참고.',
     "- 중학교 일부 코드는 고시 원문대로 '09'로 적혀 있다(예: [09수학04-01], [09생영01-01]). '9'로 찾아도 된다.",
     "- 통합교과(바른 생활·슬기로운 생활·건강한 생활·즐거운 생활)는 4개 영역을 중첩한 성취기준이라 영역명을 '통합교과 4개 영역 중첩'으로 표시한다.",
@@ -128,7 +130,64 @@ export function createServer(store) {
         });
       }
       const meta = GRADE_BANDS.find((b) => b.id === band);
-      return ok({ gradeBand: band, gradeBandKorean: meta.labelKorean, subjects: gradeBandOverview(store, band) });
+      const allotment = allotmentForBand(store, band);
+      return ok({
+        gradeBand: band, gradeBandKorean: meta.labelKorean, subjects: gradeBandOverview(store, band),
+        ...(allotment ? { allotment, operationHint: '편제·배당표 주석·운영 기준 원문은 get_operation_guidelines.' } : {}),
+      });
+    })
+  );
+
+  server.registerTool(
+    'get_operation_guidelines',
+    {
+      title: '기본 교육과정 편성·운영 기준',
+      description:
+        '【별책 1】 총론의 기본 교육과정 편성·운영(편제, 시간·학점 배당표와 주석, 교육과정 편성·운영 기준) 원문을 학교급별로 반환한다. '
+        + 'schoolLevel이 없으면 학교급 목록과 배당표 총계를, 학년군(예: 초3~4)으로 주면 그 학교급 전체와 해당 열(focus)을 준다.',
+      inputSchema: {
+        schoolLevel: z.string().max(40).optional()
+          .describe('학교급 또는 학년군 (예: 초등학교, 중학교, 고등학교, 초3~4, e5-6, 고1~3)'),
+        part: z.enum(['편제', '배당 기준', '운영 기준']).optional()
+          .describe('한 부분만 볼 때: 편제 | 배당 기준(시간·학점 배당표) | 운영 기준'),
+      },
+    },
+    guarded(async ({ schoolLevel, part }) => {
+      const op = store.operation;
+      if (!op) return fail('편성·운영 데이터가 수록되지 않은 설치본입니다.');
+      const source = { notice: op.sourceNotice, section: op.section, pages: op.pages };
+      if (!schoolLevel) {
+        return ok({
+          source,
+          schoolLevels: op.levels.map((l) => {
+            const total = l.allotment.totals.find((t) => t.kind === 'total');
+            return {
+              id: l.id, labelKorean: l.labelKorean, gradeBands: l.gradeBands,
+              allotment: { tableNo: l.allotment.tableNo, unit: l.allotment.unit, total: { label: total.label, values: total.values } },
+              organizationItems: l.organization.items.length, criteriaItems: l.criteria.items.length,
+              ...(l.note ? { note: l.note } : {}),
+            };
+          }),
+          hint: 'schoolLevel(예: 초등학교, 초3~4)을 주면 편제·배당표·운영 기준 원문을 반환한다.',
+        });
+      }
+      const hit = resolveSchoolLevel(store, schoolLevel);
+      if (!hit) {
+        throw new Error(`학교급 "${schoolLevel}"을(를) 해석할 수 없습니다. 사용 가능: 초등학교, 중학교, 고등학교 또는 학년군(초1~2 … 고1~3).`);
+      }
+      const l = hit.level;
+      const parts = {
+        편제: { organization: l.organization },
+        '배당 기준': { allotment: l.allotment },
+        '운영 기준': { criteria: l.criteria },
+      };
+      return ok({
+        source, schoolLevel: l.labelKorean, id: l.id, gradeBands: l.gradeBands,
+        ...(hit.focus ? { focus: hit.focus } : {}),
+        ...(l.note ? { note: l.note } : {}),
+        heading: l.partA,
+        ...(part ? parts[part] : { ...parts.편제, ...parts['배당 기준'], ...parts['운영 기준'] }),
+      });
     })
   );
 
@@ -218,6 +277,7 @@ export function createServer(store) {
 }
 
 export const TOOL_NAMES = [
-  'get_grade_band_overview', 'get_learning_roadmap', 'get_standard', 'list_subjects', 'search_standards',
+  'get_grade_band_overview', 'get_learning_roadmap', 'get_operation_guidelines', 'get_standard',
+  'list_subjects', 'search_standards',
 ];
 export { ABOUT_URI };

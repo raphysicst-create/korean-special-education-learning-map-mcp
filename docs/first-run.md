@@ -60,8 +60,11 @@ npm run pipeline:discover
 
 ```
 npm run pipeline:extract -- --record-gates
+npm run pipeline:operation -- --record-gates
 npm run pipeline:verify
 ```
+
+- `pipeline:operation`은 별책 1 HWP에서 기본 교육과정 편성·운영 조항을 가져온다. 배당표 전사(`pipeline/operation-tables.json`)를 HWP 표 칸과 대조하고, 별책 1 PDF와도 대조한다. 실패하면 메시지가 가리키는 칸이나 문단을 지면과 비교해 고친다.
 
 - extract의 미해결 목록은 `pipeline/exceptions.json`에 수동 보정한다. 키는 `basic:[코드]` 또는 `[코드]`, 값은 원문 문자열 또는 `{ "text": "...", "domainKorean": "..." }`. 원문은 PDF에서 그대로 옮긴다.
 - verify의 "원문 종결 이상(절단 의심)"은 대개 컷 패턴이 본문을 잘랐다는 뜻이다. 패턴을 고치는 것이 우선이고, 예외 보정은 마지막 수단.
@@ -102,3 +105,7 @@ npm run pipeline:verify
 - **6단계:**
   - 원문 691건 전량을 poppler -raw와 xpdf -layout 출력에 글자 단위로 대조해 모두 일치했다.
   - 과목마다 3건, 모두 48건을 무작위로 뽑아 `get_standard` 결과를 PDF 지면 이미지와 대조했고 모두 일치했다.
+- **편성·운영(별책 1, v0.1.0에 추가, 2026-11-14):**
+  - 원문 출처: 총론 PDF는 글자 단위로 줄을 바꿔서, HWP 판(제2026-2호 반영본)을 원문으로 썼다.
+  - 결과: 학교급 3, 편제 14항, 운영 기준 45항, 배당표 3개(<표 9>~<표 11>).
+  - 검증: 배당표 3개를 PDF 지면 이미지와 칸 단위로 대조했다. HWP 재추출은 Python olefile 판독 결과와 글자 단위로 같았다.

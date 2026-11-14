@@ -8,6 +8,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GRADE_BANDS, canonicalCode, parseBasicCode } from '../src/normalize.mjs';
 import { numberingGaps } from './extract-standards.mjs';
+import { HANGUL_ORDER, operationCounts } from './extract-operation.mjs';
+
+export const OPERATION_FILE = 'operation-guidelines.json';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const defaultDataDir = join(here, '..', 'data', 'kr');
@@ -76,6 +79,20 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
     if (actual !== s.standardCount) errors.push(`과목 ${s.id} 수량 불일치: subjects.json=${s.standardCount}, 실제=${actual}`);
   }
 
+  const opPath = join(dataDir, OPERATION_FILE);
+  if (existsSync(opPath)) {
+    const op = JSON.parse(readFileSync(opPath, 'utf8'));
+    errors.push(...verifyOperation(op));
+    counts.operation = operationCounts(op);
+    if (gates?.operation) {
+      for (const [k, v] of Object.entries(gates.operation)) {
+        if (counts.operation[k] !== v) errors.push(`게이트 불일치: 편성·운영 ${k} 기대 ${v}, 실제 ${counts.operation[k]}`);
+      }
+    }
+  } else if (gates?.operation) {
+    errors.push(`게이트에 편성·운영 수량이 있는데 ${OPERATION_FILE}이(가) 없습니다.`);
+  }
+
   if (gates) {
     for (const [category, expected] of Object.entries(gates.categories ?? {})) {
       const actual = counts.categories[category];
@@ -91,9 +108,65 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
   return { errors, counts };
 }
 
+const num = (v) => Number(String(v).replace(/,/g, '').match(/^\d+/)?.[0] ?? NaN);
+
+/**
+ * 편성·운영 데이터 검증: 배당표 검산(교과(군) 합 = 소계, 소계 + 나머지 = 총계, 1~2학년 교과
+ * 목록 합 = 소계), 조항 번호 연속성(가나다…·1,2,3…·(1),(2)…), 문장 종결.
+ */
+export function verifyOperation(op) {
+  const errors = [];
+  const ids = op.levels.map((l) => l.id).join(',');
+  if (ids !== 'elementary,middle,high') errors.push(`편성·운영 학교급 구성 이상: ${ids}`);
+  const ordinal = (no, i) => {
+    if (/^\d+\)$/.test(no)) return no === `${i + 1})`;
+    if (/^\(\d+\)$/.test(no)) return no === `(${i + 1})`;
+    return no === `${HANGUL_ORDER[i]})`;
+  };
+  const checkItems = (items, where) => {
+    (items ?? []).forEach((it, i) => {
+      if (!ordinal(it.no, i)) errors.push(`${where}: ${i + 1}번째 항목 번호가 ${it.no}`);
+      if (!/다\.(\s*<[^>]+>)?$/.test(it.text)) errors.push(`${where} ${it.no}: 문장 종결 이상 …${it.text.slice(-15)}`);
+      checkItems(it.children, `${where} ${it.no}`);
+    });
+  };
+  for (const l of op.levels) {
+    const where = `편성·운영 ${l.labelKorean}`;
+    if (!l.organization.items.length) errors.push(`${where}: 편제 항목 없음`);
+    if (!l.criteria.items.length) errors.push(`${where}: 운영 기준 항목 없음`);
+    checkItems(l.organization.items, `${where} 편제`);
+    checkItems(l.criteria.items, `${where} 운영 기준`);
+    const a = l.allotment;
+    if (!a?.tableNo) { errors.push(`${where}: 배당표 없음`); continue; }
+    a.notes.forEach((n, i) => {
+      if (!n.startsWith('①②③④⑤⑥⑦⑧⑨⑩'[i])) errors.push(`${where} ${a.tableNo} 주석 ${i + 1}번째 번호 이상`);
+    });
+    const subtotal = a.totals.find((t) => t.kind === 'subtotal');
+    const total = a.totals.find((t) => t.kind === 'total');
+    if (!subtotal || !total) { errors.push(`${where} ${a.tableNo}: 소계·총계 행 없음`); continue; }
+    for (const col of a.columns) {
+      const list = a.breakdown?.[col];
+      const group = list
+        ? list.reduce((s, b) => s + num(b.value), 0)
+        : a.rows.reduce((s, r) => s + num(r.values[col]), 0);
+      if (group !== num(subtotal.values[col])) errors.push(`${where} ${a.tableNo} ${col}: 교과(군) 합 ${group} ≠ 소계 ${subtotal.values[col]}`);
+      const rest = a.totals.filter((t) => !t.kind).reduce((s, t) => s + num(t.values[col]), 0);
+      if (num(subtotal.values[col]) + rest !== num(total.values[col])) {
+        errors.push(`${where} ${a.tableNo} ${col}: 소계+나머지 ${num(subtotal.values[col]) + rest} ≠ 총계 ${total.values[col]}`);
+      }
+    }
+    for (const [band, col] of Object.entries(a.columnByGradeBand ?? {})) {
+      if (!a.columns.includes(col)) errors.push(`${where}: 학년군 ${band}의 열 ${col}이 표에 없음`);
+      if (!l.gradeBands.includes(band)) errors.push(`${where}: 학년군 ${band}이 학교급 학년군에 없음`);
+    }
+  }
+  return errors;
+}
+
 export function computeManifestFiles(dataDir) {
   const files = {};
   const rels = ['subjects.json', ...listCategories(dataDir).flatMap((c) => CATEGORY_FILES.map((f) => `${c}/${f}`))];
+  if (existsSync(join(dataDir, OPERATION_FILE))) rels.push(OPERATION_FILE);
   for (const rel of rels) {
     files[rel] = { sha256: createHash('sha256').update(readFileSync(join(dataDir, rel))).digest('hex') };
   }
@@ -137,9 +210,12 @@ function main() {
   writeManifest(defaultDataDir, {
     release: `v${pkg.version}`,
     counts,
-    sourceNotice: sources.annexes.map((a) => `${a.notice} 【별책 ${a.annexNo}】 ${a.titleKorean}`),
+    sourceNotice: [...new Set(sources.annexes
+      .filter((a) => a.role !== 'operation-check')
+      .map((a) => `${a.notice} 【별책 ${a.annexNo}】 ${a.titleKorean}${a.section ? ` (${a.section})` : ''}`))],
   });
-  console.error(`✓ 검증 통과 — 과목 ${counts.subjects} · 성취기준 ${counts.standards}건, manifest.json 기록`);
+  const op = counts.operation ? ` · 편성·운영 ${counts.operation.organizationItems + counts.operation.criteriaItems}항` : '';
+  console.error(`✓ 검증 통과 — 과목 ${counts.subjects} · 성취기준 ${counts.standards}건${op}, manifest.json 기록`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
