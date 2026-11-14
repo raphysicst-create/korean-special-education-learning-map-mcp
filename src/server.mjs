@@ -65,7 +65,7 @@ function aboutText(store) {
     '- 성취기준 원문은 고시의 별책으로서 저작권법 제7조 제2호에 따라 보호받지 않는 저작물이며, 정확성·추적성을 위해 출처를 표기한다.',
     '- 범위(v0.1): 【별책 3】 기본 교육과정 교과 성취기준, 그리고 【별책 1】 총론 중 기본 교육과정 편성·운영(초·중·고 편제, <표 9>~<표 11> 시간·학점 배당표와 주석, 교육과정 편성·운영 기준 — get_operation_guidelines). 총론의 나머지, 특수교육 전문 교과(직업·생활, 이료), 공통·선택 중심 교육과정은 아직 수록되지 않았다.',
     '- 편성·운영 조항 원문은 같은 고시의 HWP 판에서 문단 단위로 가져와 PDF와 대조했고, 배당표는 사람이 옮긴 뒤 HWP 표 칸과 대조하고 합계를 검산했다.',
-    '- 수록 판본: 국가교육위원회 고시 제2026-2호(2026.1.21.) 일부개정 반영본. 이 개정으로 바뀐 초1~2 통합교과(건강한 생활 신설, 즐거운 생활 개편)는 2028.3.1. 시행이며, 그 전까지 학교 현장은 이전 고시(제2024-4호) 판을 따른다 — list_subjects의 note 참고.',
+    '- 수록 판본: 국가교육위원회 고시 제2026-2호(2026.1.21.) 일부개정 반영본. 이 개정으로 바뀐 초1~2 통합교과(건강한 생활 신설, 즐거운 생활 개편)는 2028.3.1. 시행이며, 그 전까지 학교 현장은 이전 고시(제2024-4호) 판을 따른다 — list_subjects의 note 참고. 이 시행 중인 이전 판 즐거운 생활 성취기준 9개도 edition "2024-4"로 함께 수록했다(같은 코드는 get_standard가 두 판을 모두 돌려준다). 다른 과목은 두 판이 같다.',
     "- 중학교 일부 코드는 고시 원문대로 '09'로 적혀 있다(예: [09수학04-01], [09생영01-01]). '9'로 찾아도 된다.",
     "- 통합교과(바른 생활·슬기로운 생활·건강한 생활·즐거운 생활)는 4개 영역을 중첩한 성취기준이라 영역명을 '통합교과 4개 영역 중첩'으로 표시한다.",
     `- ${DAILY_LIVING_NOTE}`,
@@ -106,6 +106,7 @@ export function createServer(store) {
         id: s.id, subjectKorean: s.subjectKorean, category: s.category,
         codePrefix: s.codePrefix, gradeBands: s.gradeBands, standardCount: s.standardCount,
         ...(s.note ? { note: s.note } : {}),
+        ...(s.previousEdition ? { previousEdition: s.previousEdition } : {}),
       })),
       note: DAILY_LIVING_NOTE,
     }))
@@ -125,7 +126,7 @@ export function createServer(store) {
         return ok({
           gradeBands: GRADE_BANDS.map((b) => ({
             id: b.id, labelKorean: b.labelKorean, codeNumber: b.code,
-            standardCount: store.allStandards.filter((s) => s.gradeBand === b.id).length,
+            standardCount: store.allStandards.filter((s) => s.gradeBand === b.id && !s.edition).length,
           })),
         });
       }
@@ -196,7 +197,7 @@ export function createServer(store) {
     {
       title: '성취기준 검색',
       description:
-        '성취기준을 코드·키워드(원문 본문·영역명 포함)와 과목·학년군·영역 필터로 검색한다. 결과에 원문이 포함된다.',
+        '성취기준을 코드·키워드(원문 본문·영역명 포함)와 과목·학년군·영역 필터로 검색한다. 결과에 원문이 포함된다. 시행 중인 이전 판(즐거운 생활 2024-4호 판)은 edition 표시와 함께 나온다.',
       inputSchema: {
         query: z.string().max(200).optional().describe('키워드 또는 코드 (예: 화폐, 9진로01-02)'),
         subject: SUBJECT,
@@ -220,7 +221,7 @@ export function createServer(store) {
     'get_standard',
     {
       title: '성취기준 상세',
-      description: '성취기준 코드(공백·대시 이형 무관)로 공식 원문, 과목, 학년군, 영역, 근거 고시를 조회한다.',
+      description: '성취기준 코드(공백·대시 이형 무관)로 공식 원문, 과목, 학년군, 영역, 근거 고시를 조회한다. 판이 갈린 코드(즐거운 생활)는 최신 판과 시행 중인 이전 판(edition)을 모두 돌려준다.',
       inputSchema: { code: z.string().max(100).describe('성취기준 코드 (예: [4국어01-01], 9수학04-01)') },
     },
     guarded(async ({ code }) => {
@@ -265,10 +266,16 @@ export function createServer(store) {
       if (roadmap.standardCount === 0) {
         roadmap.hint = `${meta.subjectKorean}은(는) 이 학년군에 성취기준이 없습니다. 편성 학년군: ${meta.gradeBands.join(', ')}`;
       }
+      const previous = meta.previousEdition
+        ? buildRoadmap(store, { subjectId, gradeBand: gradeBandOrThrow(gradeBand), editions: 'previous' })
+        : null;
       return ok({
         subjectId, subjectKorean: meta.subjectKorean,
         ...(meta.note ? { note: meta.note } : {}),
         ...roadmap,
+        ...(previous && previous.standardCount ? {
+          previousEdition: { edition: meta.previousEdition.edition, note: meta.previousEdition.note, ...previous },
+        } : {}),
       });
     })
   );

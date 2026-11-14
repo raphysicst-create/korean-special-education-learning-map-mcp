@@ -2,15 +2,27 @@
  "note": "성취기준 코드 접두어 → 과목 대응표. `npm run pipeline:discover` 결과(.cache/discovery-*.json)의 prefixes를 PDF 목차와 대조해 채운다. 추측으로 채우지 말 것 — 비어 있는 접두어는 extract가 unmapped-prefix로 실패시킨다. id는 영어 kebab-case. domainKorean은 PDF에 '(N) 영역명' 머리글이 없는 과목에만 쓴다. note는 list_subjects·get_learning_roadmap에 그대로 나간다.",
  "confirmedFrom": "국가교육위원회 고시 제2026-2호 반영본 별책 3 목차(18개 교과·활동)와 discover 보고서(접두어 16종, 성취기준 691건)를 2026-11-14에 대조. 창의적 체험활동·일상생활 활동은 성취기준 코드가 없어 대응표에 없다.",
  "mappings": {
-  "바생": { "id": "right-living", "subjectKorean": "바른 생활", "domainKorean": "통합교과 4개 영역 중첩" },
-  "슬생": { "id": "wise-living", "subjectKorean": "슬기로운 생활", "domainKorean": "통합교과 4개 영역 중첩" },
+  "바생": {
+   "id": "right-living",
+   "subjectKorean": "바른 생활",
+   "domainKorean": "통합교과 4개 영역 중첩"
+  },
+  "슬생": {
+   "id": "wise-living",
+   "subjectKorean": "슬기로운 생활",
+   "domainKorean": "통합교과 4개 영역 중첩"
+  },
   "건생": {
-   "id": "healthy-living", "subjectKorean": "건강한 생활", "domainKorean": "통합교과 4개 영역 중첩",
+   "id": "healthy-living",
+   "subjectKorean": "건강한 생활",
+   "domainKorean": "통합교과 4개 영역 중첩",
    "note": "국가교육위원회 고시 제2026-2호(2026.1.21.)로 신설된 통합교과. 부칙에 따라 초등학교 1, 2학년은 2028년 3월 1일부터 시행한다."
   },
   "즐생": {
-   "id": "joyful-living", "subjectKorean": "즐거운 생활", "domainKorean": "통합교과 4개 영역 중첩",
-   "note": "국가교육위원회 고시 제2026-2호(2026.1.21.)로 개편된 성취기준(9개 → 6개, 신체활동 성취기준은 건강한 생활로 이동)을 수록했다. 초등학교 1, 2학년 시행일은 2028년 3월 1일이며, 그 전까지 학교 현장은 이전 고시(제2024-4호) 판 즐거운 생활 성취기준 9개를 따른다."
+   "id": "joyful-living",
+   "subjectKorean": "즐거운 생활",
+   "domainKorean": "통합교과 4개 영역 중첩",
+   "note": "국가교육위원회 고시 제2026-2호(2026.1.21.)로 개편된 성취기준(9개 → 6개, 신체활동 성취기준은 건강한 생활로 이동)이다. 초등학교 1, 2학년 시행일은 2028년 3월 1일이며, 그 전까지 학교 현장은 이전 고시(제2024-4호) 판 즐거운 생활 성취기준 9개를 따른다 — 이 9개도 edition \"2024-4\"로 함께 수록했다(previousEdition, get_learning_roadmap의 previousEdition)."
   },
   "국어": { "id": "korean", "subjectKorean": "국어" },
   "사회": { "id": "social-studies", "subjectKorean": "사회" },

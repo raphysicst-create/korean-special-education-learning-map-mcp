@@ -1659,9 +1659,21 @@
    "locator": "pattern-match"
   },
   {
+   "key": "basic:[2즐생01-01]@2024-4",
+   "text": "신체감각을 다양하게 느낀다.",
+   "sourceId": "nec-2024-4-annex3",
+   "locator": "pattern-match"
+  },
+  {
    "key": "basic:[2즐생01-02]",
    "text": "자연과 생활 속의 아름다움을 느끼며 예술에 대한 흥미와 관심을 가진다.",
    "sourceId": "nec-2026-2-annex3",
+   "locator": "pattern-match"
+  },
+  {
+   "key": "basic:[2즐생01-02]@2024-4",
+   "text": "주변의 아름다움을 자유롭게 감상한다.",
+   "sourceId": "nec-2024-4-annex3",
    "locator": "pattern-match"
   },
   {
@@ -1671,9 +1683,21 @@
    "locator": "pattern-match"
   },
   {
+   "key": "basic:[2즐생01-03]@2024-4",
+   "text": "주변의 아름다움을 창의적으로 표현한다.",
+   "sourceId": "nec-2024-4-annex3",
+   "locator": "pattern-match"
+  },
+  {
    "key": "basic:[2즐생01-04]",
    "text": "나와 주변 세계를 색과 모양으로 다양하게 표현한다.",
    "sourceId": "nec-2026-2-annex3",
+   "locator": "pattern-match"
+  },
+  {
+   "key": "basic:[2즐생01-04]@2024-4",
+   "text": "관심 있거나 좋아하는 것으로 재미있게 논다.",
+   "sourceId": "nec-2024-4-annex3",
    "locator": "pattern-match"
   },
   {
@@ -1683,9 +1707,39 @@
    "locator": "pattern-match"
   },
   {
+   "key": "basic:[2즐생01-05]@2024-4",
+   "text": "감정과 정서를 건강하게 표현한다.",
+   "sourceId": "nec-2024-4-annex3",
+   "locator": "pattern-match"
+  },
+  {
    "key": "basic:[2즐생01-06]",
    "text": "다양한 예술 활동을 즐긴다.",
    "sourceId": "nec-2026-2-annex3",
+   "locator": "pattern-match"
+  },
+  {
+   "key": "basic:[2즐생01-06]@2024-4",
+   "text": "신체활동을 적극적으로 즐긴다.",
+   "sourceId": "nec-2024-4-annex3",
+   "locator": "pattern-match"
+  },
+  {
+   "key": "basic:[2즐생01-07]@2024-4",
+   "text": "신체활동에 안전하게 참여한다.",
+   "sourceId": "nec-2024-4-annex3",
+   "locator": "pattern-match"
+  },
+  {
+   "key": "basic:[2즐생01-08]@2024-4",
+   "text": "문화예술을 다양하게 즐긴다.",
+   "sourceId": "nec-2024-4-annex3",
+   "locator": "pattern-match"
+  },
+  {
+   "key": "basic:[2즐생01-09]@2024-4",
+   "text": "다양한 놀이에 재미있게 참여한다.",
+   "sourceId": "nec-2024-4-annex3",
    "locator": "pattern-match"
   },
   {

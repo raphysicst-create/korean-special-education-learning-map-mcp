@@ -20,9 +20,22 @@ export function pdfPattern(annexNo) {
   return new RegExp(`\\[\\s*별\\s*책\\s*${annexNo}\\s*\\]`);
 }
 
-export function findLocalPdf(names, annexNo, format = 'pdf') {
+// 내려받은 파일 이름 끝의 '(출처 id).확장자' 꼬리표.
+const ID_TAG = /\(([a-z0-9-]+)\)\.[a-z]+$/i;
+
+/**
+ * PDF_DIR에서 [별책N] 파일을 찾는다. 같은 별책의 판본이 여럿일 수 있으므로(예: 2024-4호·2026-2호 별책 3)
+ * 이름에 이 출처 id 꼬리표가 붙은 파일을 먼저 고르고, 다른 출처 id 꼬리표가 붙은 파일은 건너뛴다.
+ * 꼬리표 없는 파일(사람이 직접 받아 둔 것)은 받아 주되, 해시 대조가 판본을 가린다.
+ */
+export function findLocalPdf(names, annexNo, format = 'pdf', id = null) {
   const re = pdfPattern(annexNo);
-  return names.find((f) => f.toLowerCase().endsWith(`.${format}`) && re.test(f)) ?? null;
+  const candidates = names.filter((f) => f.toLowerCase().endsWith(`.${format}`) && re.test(f));
+  if (id) {
+    const exact = candidates.find((f) => ID_TAG.exec(f)?.[1] === id);
+    if (exact) return exact;
+  }
+  return candidates.find((f) => !ID_TAG.test(f)) ?? null;
 }
 
 // 형식별 파일 첫머리 — PDF와 HWP 5.0(OLE 복합 문서).
@@ -34,7 +47,7 @@ const MAGIC = {
 async function resolveAnnex(annex, pdfDir, { pin }) {
   const format = annex.format ?? 'pdf';
   const label = `[별책${annex.annexNo}] ${format.toUpperCase()}`;
-  let name = findLocalPdf(existsSync(pdfDir) ? readdirSync(pdfDir) : [], annex.annexNo, format);
+  let name = findLocalPdf(existsSync(pdfDir) ? readdirSync(pdfDir) : [], annex.annexNo, format, annex.id);
   if (!name) {
     console.error(`… ${label} 로컬 파일 없음 — ${annex.url} 다운로드 시도`);
     const res = await fetch(annex.url);

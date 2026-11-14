@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  buildDataset, discoveryReport, extractStandards, findListCodes, numberingGaps, sliceStandardText,
+  buildDataset, discoveryReport, extractStandards, findListCodes, numberingGaps, selectPreviousEdition,
+  sliceStandardText,
 } from '../pipeline/extract-standards.mjs';
 import { findLocalPdf, pdfPattern } from '../pipeline/fetch-sources.mjs';
 import { verifyAll } from '../pipeline/verify.mjs';
@@ -230,6 +231,30 @@ test('verify: 순번 결번을 누락 의심으로 잡는다', () => {
   writeFileSync(stdPath, JSON.stringify(data));
   const { errors } = verifyAll(dir, null);
   assert.ok(errors.some((e) => e.includes('순번 결번') && e.includes('korean|e3-4|01')), errors.join('\n'));
+});
+
+test('이전 판: 지정 과목만 판 표시(@판)를 달아 싣고, 나머지 과목이 최신 판과 다르면 실패한다', () => {
+  const { records } = extractStandards(SAMPLE_PDF_TEXT);
+  const current = buildDataset(records, { category: 'basic', sourceId: 'cur', mappings: SAMPLE_MAPPINGS });
+  const changed = records.map((r) => (r.code === '[4국01-01]' ? { ...r, text: '옛 문장이다.' } : r));
+  const previous = buildDataset(changed, {
+    category: 'basic', sourceId: 'prev', mappings: SAMPLE_MAPPINGS, edition: '2024-4', editionNote: '현행',
+  });
+  assert.equal(previous.standards[0].key, 'basic:[4국01-01]@2024-4');
+  const ok = selectPreviousEdition(current, previous, new Set(['korean']));
+  assert.deepEqual(ok.failures, []);
+  assert.equal(ok.standards.length, 3);
+  assert.ok(ok.standards.every((s) => s.edition === '2024-4' && s.editionNote === '현행'));
+  assert.equal(ok.bySubject.korean.count, 3);
+  const bad = selectPreviousEdition(current, previous, new Set(['career-vocation']));
+  assert.deepEqual(bad.failures.map((f) => [f.code, f.reason]), [['[4국01-01]', 'previous-edition-differs']]);
+});
+
+test('fetch: 같은 별책의 판본이 여럿이면 출처 id 꼬리표로 고른다', () => {
+  const names = ['[별책3] 기본 교육과정(nec-2026-2-annex3).pdf', '[별책3] 기본 교육과정(nec-2024-4-annex3).pdf'];
+  assert.equal(findLocalPdf(names, 3, 'pdf', 'nec-2024-4-annex3'), names[1]);
+  assert.equal(findLocalPdf([names[0]], 3, 'pdf', 'nec-2024-4-annex3'), null);
+  assert.equal(findLocalPdf(['[별책3] 손으로 받은 파일.pdf'], 3, 'pdf', 'nec-2024-4-annex3'), '[별책3] 손으로 받은 파일.pdf');
 });
 
 test('fetch: [별책3]만 잡고 [별책30]·[별책13]은 잡지 않는다', () => {

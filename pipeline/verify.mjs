@@ -35,8 +35,9 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
     subjectById.set(s.id, s);
   }
 
-  const counts = { subjects: subjects.length, standards: 0, categories: {} };
+  const counts = { subjects: subjects.length, standards: 0, previousEdition: 0, categories: {} };
   const perSubject = new Map();
+  const prevPerSubject = new Map();
   for (const category of listCategories(dataDir)) {
     const { standards } = read(`${category}/curriculum-standards.json`);
     const { texts } = read(`${category}/standard-texts.json`);
@@ -45,8 +46,12 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
     for (const s of standards) {
       if (keys.has(s.key)) errors.push(`성취기준 key 중복: ${s.key}`);
       keys.add(s.key);
-      if (codes.has(canonicalCode(s.code))) errors.push(`${category} 안 코드 중복: ${s.code}`);
-      codes.add(canonicalCode(s.code));
+      // 같은 코드는 판(edition)이 다를 때만 함께 있을 수 있다.
+      const codeKey = `${canonicalCode(s.code)}|${s.edition ?? ''}`;
+      if (codes.has(codeKey)) errors.push(`${category} 안 코드 중복: ${s.code}${s.edition ? ` (${s.edition})` : ''}`);
+      codes.add(codeKey);
+      if (s.edition && s.key !== `${category}:${s.code}@${s.edition}`) errors.push(`이전 판 key 형식 오류: ${s.key}`);
+      if (s.edition && !s.editionNote) errors.push(`이전 판 안내 누락: ${s.key}`);
       if (s.category !== category) errors.push(`카테고리 폴더 불일치: ${s.key}`);
       if (!subjectById.has(s.subjectId)) errors.push(`미지 과목: ${s.key} → ${s.subjectId}`);
       if (!BAND_IDS.has(s.gradeBand)) errors.push(`미지 학년군: ${s.key} → ${s.gradeBand}`);
@@ -54,7 +59,8 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
       if (!parsed) errors.push(`코드 형식 오류: ${s.code}`);
       else if (parsed.gradeBand !== s.gradeBand) errors.push(`코드-학년군 불일치: ${s.code} (${s.gradeBand})`);
       if (!s.domainKorean) errors.push(`영역 누락: ${s.key}`);
-      perSubject.set(s.subjectId, (perSubject.get(s.subjectId) ?? 0) + 1);
+      const bucket = s.edition ? prevPerSubject : perSubject;
+      bucket.set(s.subjectId, (bucket.get(s.subjectId) ?? 0) + 1);
     }
     const textKeys = new Set();
     for (const t of texts) {
@@ -71,12 +77,16 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
     for (const key of keys) if (!textKeys.has(key)) errors.push(`원문 없는 성취기준(출시 금지): ${key}`);
     // 과목·학년군·영역마다 순번이 01부터 이어져야 한다 — 중간 결번은 추출 누락 신호다.
     for (const g of numberingGaps(standards)) errors.push(`순번 결번(누락 의심): ${category} ${g.group} → ${g.missing.join(',')}`);
-    counts.standards += standards.length;
-    counts.categories[category] = standards.length;
+    const current = standards.filter((s) => !s.edition).length;
+    counts.standards += current;
+    counts.previousEdition += standards.length - current;
+    counts.categories[category] = current;
   }
   for (const s of subjects) {
     const actual = perSubject.get(s.id) ?? 0;
     if (actual !== s.standardCount) errors.push(`과목 ${s.id} 수량 불일치: subjects.json=${s.standardCount}, 실제=${actual}`);
+    const prev = prevPerSubject.get(s.id) ?? 0;
+    if (prev !== (s.previousEdition?.standardCount ?? 0)) errors.push(`과목 ${s.id} 이전 판 수량 불일치: subjects.json=${s.previousEdition?.standardCount ?? 0}, 실제=${prev}`);
   }
 
   const opPath = join(dataDir, OPERATION_FILE);
@@ -98,6 +108,10 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
       const actual = counts.categories[category];
       if (actual !== expected.standards) {
         errors.push(`게이트 불일치: ${category} 성취기준 기대 ${expected.standards}, 실제 ${actual ?? 0}`);
+      }
+      for (const [subjectId, n] of Object.entries(expected.previousEdition ?? {})) {
+        const got = prevPerSubject.get(subjectId) ?? 0;
+        if (got !== n) errors.push(`게이트 불일치: 과목 ${subjectId} 이전 판 기대 ${n}, 실제 ${got}`);
       }
       for (const [subjectId, n] of Object.entries(expected.bySubject ?? {})) {
         const got = perSubject.get(subjectId) ?? 0;

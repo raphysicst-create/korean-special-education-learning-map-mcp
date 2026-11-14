@@ -23,7 +23,9 @@ const call = async (client, name, args = {}) => JSON.parse((await client.callToo
 
 test('data: 과목·성취기준 수가 gates.json과 같다', () => {
   const basic = gates.categories.basic;
-  assert.equal(store.allStandards.length, basic.standards);
+  const current = store.allStandards.filter((s) => !s.edition);
+  assert.equal(current.length, basic.standards);
+  assert.equal(store.allStandards.length - current.length, Object.values(basic.previousEdition ?? {}).reduce((n, v) => n + v, 0));
   assert.equal(store.subjects.length, basic.subjects);
   for (const s of store.subjects) assert.equal(s.standardCount, basic.bySubject[s.id], s.id);
   assert.equal(store.manifest.counts.standards, basic.standards);
@@ -111,4 +113,33 @@ test('data: get_grade_band_overview가 그 학년군의 배당 기준을 함께 
   const h = await call(client, 'get_grade_band_overview', { gradeBand: '고1~3' });
   assert.equal(h.allotment.unit, '학점');
   assert.deepEqual(h.allotment.totals.at(-1), { label: '총 이수 학점', value: '192' });
+});
+
+test('data: 즐거운 생활은 최신 판(2026-2)과 시행 중인 이전 판(2024-4)을 구분해 함께 준다', async () => {
+  const client = await connect();
+  const both = (await call(client, 'get_standard', { code: '2즐생01-06' })).results;
+  assert.deepEqual(both.map((r) => [r.edition ?? 'current', r.officialText]), [
+    ['current', '다양한 예술 활동을 즐긴다.'],
+    ['2024-4', '신체활동을 적극적으로 즐긴다.'],
+  ]);
+  assert.ok(both[1].editionNote.includes('2028년 3월 1일 전까지'));
+  const onlyOld = (await call(client, 'get_standard', { code: '[2즐생01-09]' })).results;
+  assert.deepEqual(onlyOld.map((r) => [r.edition, r.officialText]), [['2024-4', '다양한 놀이에 재미있게 참여한다.']]);
+
+  const joyful = (await call(client, 'list_subjects')).subjects.find((s) => s.id === 'joyful-living');
+  assert.equal(joyful.standardCount, 6);
+  assert.equal(joyful.previousEdition.edition, '2024-4');
+  assert.equal(joyful.previousEdition.standardCount, 9);
+
+  const roadmap = await call(client, 'get_learning_roadmap', { subject: '즐거운 생활' });
+  assert.equal(roadmap.standardCount, 6);
+  assert.equal(roadmap.previousEdition.standardCount, 9);
+  assert.equal(roadmap.previousEdition.gradeBands[0].domains[0].standards[8].code, '[2즐생01-09]');
+  // 다른 과목 로드맵에는 previousEdition이 없다.
+  assert.equal((await call(client, 'get_learning_roadmap', { subject: '바른 생활' })).previousEdition, undefined);
+
+  const hit = await call(client, 'search_standards', { query: '신체활동을 적극적으로' });
+  assert.deepEqual(hit.results.map((r) => [r.code, r.edition]), [['[2즐생01-06]', '2024-4']]);
+  const e12 = await call(client, 'get_grade_band_overview', { gradeBand: 'e1-2' });
+  assert.equal(e12.subjects.find((s) => s.subjectId === 'joyful-living').standardCount, 6);
 });

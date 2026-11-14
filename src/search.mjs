@@ -48,7 +48,8 @@ export function byCurriculumOrder(a, b) {
   return (BAND_ORDER.get(a.gradeBand) - BAND_ORDER.get(b.gradeBand))
     || a.subjectId.localeCompare(b.subjectId, 'en')
     || a.domainNo.localeCompare(b.domainNo)
-    || a.itemNo.localeCompare(b.itemNo);
+    || a.itemNo.localeCompare(b.itemNo)
+    || (a.edition ? 1 : 0) - (b.edition ? 1 : 0);
 }
 
 export function compactStandard(store, s) {
@@ -58,11 +59,18 @@ export function compactStandard(store, s) {
     gradeBand: s.gradeBand,
     domainKorean: s.domainKorean,
     text: store.textsByKey.get(s.key),
+    ...(s.edition ? { edition: s.edition, editionNote: s.editionNote } : {}),
   };
 }
 
-function filterStandards(store, { subjectId, gradeBand, domain, category }) {
+/**
+ * editions: 'all'(최신 판 + 시행 중인 이전 판) | 'current'(최신 판만) | 'previous'(이전 판만).
+ * 이전 판은 같은 코드를 최신 판과 함께 쓰므로 로드맵·개요·수량은 'current'로 센다.
+ */
+function filterStandards(store, { subjectId, gradeBand, domain, category, editions = 'all' }) {
   let list = store.allStandards;
+  if (editions === 'current') list = list.filter((s) => !s.edition);
+  if (editions === 'previous') list = list.filter((s) => s.edition);
   if (category) list = list.filter((s) => s.category === category);
   if (subjectId) list = list.filter((s) => s.subjectId === subjectId);
   if (gradeBand) list = list.filter((s) => s.gradeBand === gradeBand);
@@ -108,9 +116,9 @@ export function searchStandards(store, { query, subjectId, gradeBand, domain, ca
   };
 }
 
-/** 과목 로드맵: 학년군 → 영역 → 성취기준. 문서 순서 그대로이며 새 순서를 만들지 않는다. */
-export function buildRoadmap(store, { subjectId, gradeBand }) {
-  const list = filterStandards(store, { subjectId, gradeBand }).slice().sort(byCurriculumOrder);
+/** 과목 로드맵: 학년군 → 영역 → 성취기준. 문서 순서 그대로이며 새 순서를 만들지 않는다. 기본은 최신 판. */
+export function buildRoadmap(store, { subjectId, gradeBand, editions = 'current' }) {
+  const list = filterStandards(store, { subjectId, gradeBand, editions }).slice().sort(byCurriculumOrder);
   const bands = [];
   for (const s of list) {
     let band = bands.at(-1);
@@ -130,7 +138,7 @@ export function buildRoadmap(store, { subjectId, gradeBand }) {
 
 /** 학년군 개요: 그 학년군에서 과목별 영역·성취기준 수. 개별화교육계획 범위 잡기에 쓴다. */
 export function gradeBandOverview(store, gradeBand) {
-  const list = filterStandards(store, { gradeBand });
+  const list = filterStandards(store, { gradeBand, editions: 'current' });
   const bySubject = new Map();
   for (const s of list) {
     if (!bySubject.has(s.subjectId)) {

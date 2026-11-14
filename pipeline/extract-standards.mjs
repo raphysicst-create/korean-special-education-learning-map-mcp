@@ -6,7 +6,7 @@
 //   npm run pipeline:extract   — pipeline/subjects.json 대응표로 data/kr/ 산출물을 쓴다
 //   npm run pipeline:extract -- --record-gates — 산출 수량을 pipeline/gates.json에 기록
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -233,7 +233,7 @@ export function extractStandards(pdfText) {
 export function numberingGaps(items) {
   const groups = new Map();
   for (const r of items) {
-    const k = `${r.prefix ?? r.subjectId}|${r.bandCode ?? r.gradeBand}|${r.domainNo}`;
+    const k = `${r.prefix ?? r.subjectId}|${r.bandCode ?? r.gradeBand}|${r.domainNo}${r.edition ? `@${r.edition}` : ''}`;
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(Number(r.itemNo));
   }
@@ -283,7 +283,9 @@ export function discoveryReport(records, duplicates, rejected = []) {
  * 출시하지 않고 failures로 돌려준다(원문 범위 = 출시 범위). 같은 코드가 다른 원문으로 두 번
  * 나온 충돌(duplicates 중 sameText=false)은 exceptions에 원문을 적어 확정하기 전까지 출시하지 않는다.
  */
-export function buildDataset(records, { category, sourceId, mappings, exceptions = {}, duplicates = [] }) {
+export function buildDataset(records, {
+  category, sourceId, mappings, exceptions = {}, duplicates = [], edition = null, editionNote = null,
+}) {
   const failures = [];
   const standards = [];
   const texts = [];
@@ -294,8 +296,9 @@ export function buildDataset(records, { category, sourceId, mappings, exceptions
     if (!map) { failures.push({ code: r.code, reason: 'unmapped-prefix', prefix: r.prefix }); continue; }
     const band = gradeBandByCode(r.bandCode);
     if (!band) { failures.push({ code: r.code, reason: 'unknown-grade-band', bandCode: r.bandCode }); continue; }
-    const key = `${category}:${r.code}`;
-    const override = exceptions[key] ?? exceptions[r.code];
+    // 이전 판(edition)은 같은 코드가 최신 판과 겹치므로 key에 '@판'을 붙인다.
+    const key = edition ? `${category}:${r.code}@${edition}` : `${category}:${r.code}`;
+    const override = exceptions[key] ?? (edition ? undefined : exceptions[r.code]);
     // 예외 값은 원문 문자열이거나 { text?, domainKorean? } — domainKorean만 고칠 수도 있다.
     const overrideText = typeof override === 'string' ? override : override?.text;
     const text = overrideText ?? r.text;
@@ -325,6 +328,7 @@ export function buildDataset(records, { category, sourceId, mappings, exceptions
       key, code: r.code, category, subjectId: map.id, subjectKorean: map.subjectKorean,
       gradeBand: band.id, gradeBandKorean: band.labelKorean,
       domainNo: r.domainNo, domainKorean, itemNo: r.itemNo, sourceId,
+      ...(edition ? { edition, editionNote } : {}),
     });
     texts.push({
       key, text: normalizeWhitespace(text), sourceId,
@@ -348,6 +352,35 @@ export function buildDataset(records, { category, sourceId, mappings, exceptions
     })).sort((a, b) => a.id.localeCompare(b.id, 'en')),
     standards, texts, failures,
   };
+}
+
+/**
+ * 시행 중인 이전 판(previous)에서 include 과목만 골라 최신 판(current) 데이터에 덧붙인다.
+ * include 밖 과목은 두 판이 같아야 한다 — 다르면 그 과목도 판이 갈린 것이므로 실패로 알린다.
+ * 반환: { standards, texts, bySubject: {subjectId: {count, gradeBands}}, failures }
+ */
+export function selectPreviousEdition(current, previous, includeSubjectIds) {
+  const failures = [];
+  const curByCode = new Map(current.standards.map((s) => [canonicalCode(s.code), s]));
+  const curText = new Map(current.texts.map((t) => [t.key, t.text]));
+  const prevText = new Map(previous.texts.map((t) => [t.key, t.text]));
+  const keep = [];
+  for (const s of previous.standards) {
+    if (includeSubjectIds.has(s.subjectId)) { keep.push(s); continue; }
+    const cur = curByCode.get(canonicalCode(s.code));
+    if (!cur) { failures.push({ code: s.code, reason: 'previous-edition-only', preview: '이전 판에만 있는 성취기준 — include에 과목을 넣어야 한다' }); continue; }
+    if (curText.get(cur.key) !== prevText.get(s.key) || cur.domainKorean !== s.domainKorean) {
+      failures.push({ code: s.code, reason: 'previous-edition-differs', preview: `${prevText.get(s.key)?.slice(0, 30)} ↔ ${curText.get(cur.key)?.slice(0, 30)}` });
+    }
+  }
+  const keys = new Set(keep.map((s) => s.key));
+  const bySubject = {};
+  for (const s of keep) {
+    bySubject[s.subjectId] ??= { count: 0, gradeBands: new Set() };
+    bySubject[s.subjectId].count += 1;
+    bySubject[s.subjectId].gradeBands.add(s.gradeBand);
+  }
+  return { standards: keep, texts: previous.texts.filter((t) => keys.has(t.key)), bySubject, failures };
 }
 
 function pdftotext(pdfPath) {
@@ -403,6 +436,36 @@ function main() {
     for (const g of numberingGaps(records)) {
       built.failures.push({ code: g.group, reason: 'numbering-gap', preview: `결번 ${g.missing.join(',')}` });
     }
+    const currentCount = built.standards.length;
+    const previousCounts = {};
+    for (const prev of sources.annexes.filter((a) => a.role === 'standards-previous' && a.category === annex.category)) {
+      if (!pdfPaths[prev.id]) throw new Error(`${prev.id}의 PDF 경로가 없습니다 — pipeline:fetch를 먼저 실행하세요.`);
+      const px = extractStandards(pdftotext(pdfPaths[prev.id]));
+      const pBuilt = buildDataset(px.records, {
+        category: prev.category, sourceId: prev.id, mappings, exceptions, duplicates: px.duplicates,
+        edition: prev.edition, editionNote: prev.editionNote,
+      });
+      const include = new Set((prev.include?.prefixes ?? []).map((p) => mappings[p]?.id).filter(Boolean));
+      const sel = selectPreviousEdition(built, pBuilt, include);
+      built.failures.push(
+        ...pBuilt.failures.map((f) => ({ ...f, code: `${prev.edition} ${f.code}` })),
+        ...px.rejected.map((r) => ({ code: `${prev.edition} ${r.code}`, reason: 'rejected-list-code', preview: r.context })),
+        ...numberingGaps(px.records).map((g) => ({ code: `${prev.edition} ${g.group}`, reason: 'numbering-gap', preview: `결번 ${g.missing.join(',')}` })),
+        ...sel.failures.map((f) => ({ ...f, code: `${prev.edition} ${f.code}` })),
+      );
+      built.standards.push(...sel.standards);
+      built.texts.push(...sel.texts);
+      for (const [sid, info] of Object.entries(sel.bySubject)) {
+        const subject = built.subjects.find((s) => s.id === sid);
+        subject.previousEdition = {
+          edition: prev.edition, sourceId: prev.id, notice: prev.notice, note: prev.editionNote,
+          standardCount: info.count, gradeBands: [...info.gradeBands],
+        };
+        previousCounts[sid] = info.count;
+      }
+      console.error(`✓ ${prev.id}: 이전 판 ${sel.standards.length}건 함께 수록(${[...include].join(', ')}) — 나머지 과목은 최신 판과 같음 확인`);
+    }
+    built.texts.sort((a, b) => a.key.localeCompare(b.key, 'ko'));
     const dir = join(repoRoot, 'data', 'kr', annex.category);
     writeJson(join(dir, 'curriculum-standards.json'), {
       version: 'kr-special-standards-v1', category: annex.category, standards: built.standards,
@@ -414,10 +477,11 @@ function main() {
     });
     allSubjects.push(...built.subjects);
     gates.categories[annex.category] = {
-      subjects: built.subjects.length, standards: built.standards.length,
+      subjects: built.subjects.length, standards: currentCount,
       bySubject: Object.fromEntries(built.subjects.map((s) => [s.id, s.standardCount])),
+      ...(Object.keys(previousCounts).length ? { previousEdition: previousCounts } : {}),
     };
-    console.error(`✓ ${annex.id}: 과목 ${built.subjects.length} · 성취기준 ${built.standards.length}건 기록`);
+    console.error(`✓ ${annex.id}: 과목 ${built.subjects.length} · 성취기준 ${currentCount}건 기록`);
     if (built.failures.length) {
       failed += built.failures.length;
       console.error(`✗ 미해결 ${built.failures.length}건 — subjects.json·exceptions.json 보정 후 재실행:`);
@@ -431,7 +495,10 @@ function main() {
   if (recordGates) {
     const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
     gates.release = `v${pkg.version}`;
-    writeJson(join(here, 'gates.json'), gates);
+    // 다른 단계가 기록한 게이트(예: operation)는 그대로 둔다.
+    const gatesPath = join(here, 'gates.json');
+    const existing = existsSync(gatesPath) ? JSON.parse(readFileSync(gatesPath, 'utf8')) : {};
+    writeJson(gatesPath, { ...existing, ...gates });
     console.error('✓ pipeline/gates.json 갱신');
   }
   if (failed) process.exit(1);
