@@ -158,3 +158,65 @@ test('data: 검수 보강 — part만 주면 세 학교급, 조항 수 셈법 �
   const upper = await call(client, 'get_grade_band_overview', { gradeBand: 'M1-3' });
   assert.equal(upper.gradeBand, 'm1-3');
 });
+
+test('data: 내용 체계·해설 수량이 gates.json과 같고, 현행 성취기준 691개 모두 해설이 있다', async () => {
+  const { notesForStandard } = await import('../src/search.mjs');
+  assert.equal(store.manifest.counts.details.contentItems, gates.details.contentItems);
+  assert.deepEqual(store.manifest.counts.details, gates.details);
+  for (const s of store.allStandards) {
+    const n = notesForStandard(store, s);
+    assert.ok(n && n.explanation.length > 0, `${s.key} 해설 없음`);
+  }
+});
+
+test('data: get_content_system — 하위 영역·병합 칸·세로쓰기 표기·이전 판', async () => {
+  const client = await connect();
+  const math = await call(client, 'get_content_system', { subject: '수학', gradeBand: '초1~2', domain: '수와 연산' });
+  assert.equal(math.domains[0].coreIdeas[0], '수 이전 개념을 다루는 활동은 수 개념 형성의 기초가 된다.');
+  const skills = math.domains[0].contentElements.find((r) => r.category === '과정·기능');
+  assert.deepEqual(skills.sharedWithGradeBands, ['e3-4', 'e5-6']);
+  assert.deepEqual(math.domains[0].contentElements[0], { category: '지식·이해', subArea: '수의 기초', items: ['찾기', '변별하기', '비교하기', '짝짓기', '순서짓기'] });
+
+  const korean = await call(client, 'get_content_system', { subject: '국어', domain: '1' });
+  assert.equal(korean.domains[0].coreIdeas[0], '듣기·말하기는 말소리, 준언어, 비언어, 보완대체의사소통, 매체를 활용하여 의미를 수용하고 표현하는 과정이다.');
+  assert.equal(korean.previousEdition, undefined);
+
+  const social = await call(client, 'get_content_system', { subject: '사회' });
+  const subAreas = [...new Set(social.domains.flatMap((d) => d.contentElements.map((r) => r.subArea)))];
+  assert.deepEqual(subAreas, ['자율성', '도덕적 인성', '사회성', '인간과 자연의 공존', '역사·문화 소양', '민주시민']);
+
+  const right = await call(client, 'get_content_system', { subject: '바른 생활' });
+  assert.equal(right.previousEdition[0].edition, '2024-4');
+  assert.ok(right.intro[0].includes('4개 영역'));
+  assert.ok(right.previousEdition[0].intro[0].includes('네 개 영역'));
+
+  const r = await client.callTool({ name: 'get_content_system', arguments: { subject: '국어', domain: '문법' } });
+  assert.ok(r.isError && r.content[0].text.includes('듣기·말하기'));
+});
+
+test('data: get_standard — 해설·고려 사항, 원문 오기 보정, 판별 해설', async () => {
+  const client = await connect();
+  const money = (await call(client, 'get_standard', { code: '6수학01-12' })).results[0].notes;
+  assert.equal(money.subArea, '화폐');
+  assert.ok(money.explanation[0].text.startsWith('[6수학01-11], [수학01-12] 시장 놀이'));
+  assert.deepEqual(money.explanation[0].sharedWith, ['[6수학01-11]']);
+  assert.equal(money.sharedConsiderations.length, 1);
+
+  const find = (await call(client, 'get_standard', { code: '[2수학01-01]' })).results[0].notes;
+  assert.ok(find.explanation[0].text.startsWith('[2수학01-01] 찾기는 시야에서 인지된 사물을 가림막, 천, 상자 등으로 가리고 다시 해당 사물을 찾게 하는 활동이다.'));
+
+  const right = (await call(client, 'get_standard', { code: '2바생01-04' })).results;
+  assert.equal(right.length, 1);
+  assert.ok(right[0].notes.explanation[0].text.includes('실천할 수 있도록 설정하였다'));
+  assert.equal(right[0].previousEditionNotes[0].edition, '2024-4');
+  assert.ok(right[0].previousEditionNotes[0].explanation[0].text.includes('실천하도록 설정하였다'));
+
+  const joyful = (await call(client, 'get_standard', { code: '2즐생01-01' })).results;
+  assert.deepEqual(joyful.map((x) => [x.edition ?? 'current', x.notes.explanation.length > 0, x.previousEditionNotes]), [
+    ['current', true, undefined], ['2024-4', true, undefined],
+  ]);
+  assert.equal(joyful[0].notes.explanation[0].label, '성취기준의 설정 취지 및 의미');
+
+  const lean = (await call(client, 'get_standard', { code: '4국어01-01', includeNotes: false })).results[0];
+  assert.equal(lean.notes, undefined);
+});

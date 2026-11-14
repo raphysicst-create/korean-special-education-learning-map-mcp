@@ -159,6 +159,73 @@ export function gradeBandOverview(store, gradeBand) {
     }));
 }
 
+/**
+ * 성취기준 하나의 해설·고려 사항(같은 판). edition이 null이면 최신 판. 없으면 null.
+ *  - explanation: 이 성취기준의 '성취기준 해설' 문단(여러 성취기준을 함께 다룬 문단은 sharedWith)
+ *  - considerations: 이 성취기준을 가리키는 '적용 시 고려 사항' 문단
+ *  - sharedConsiderations: 코드 없이 같은 목록 상자 전체에 해당하는 고려 사항
+ *  - domainIntro / subAreaIntro: 영역(통합교과는 과목) 성취기준 안내, 하위 영역 안내
+ */
+export function notesForStandard(store, s, edition = s.edition ?? null) {
+  const code = canonicalCode(s.code);
+  const hit = (store.notesByCode?.get(code) ?? [])
+    .find((n) => n.subjectNotes.subjectId === s.subjectId && (n.subjectNotes.edition ?? null) === edition);
+  if (!hit) return null;
+  const { section, group } = hit;
+  const mine = (e) => e.codes.some((c) => canonicalCode(c) === code);
+  const fmt = (e) => {
+    const others = e.codes.filter((c) => canonicalCode(c) !== code);
+    return { ...(e.label ? { label: e.label } : {}), text: e.text, ...(others.length ? { sharedWith: others } : {}) };
+  };
+  const shared = group.considerations.filter((e) => e.codes.length === 0).map(fmt);
+  return {
+    ...(section.intro.length ? { domainIntro: section.intro } : {}),
+    ...(group.subArea ? { subArea: group.subArea.name } : {}),
+    ...(group.intro.length ? { subAreaIntro: group.intro } : {}),
+    explanation: group.explanations.filter(mine).map(fmt),
+    considerations: group.considerations.filter(mine).map(fmt),
+    ...(shared.length ? { sharedConsiderations: shared } : {}),
+  };
+}
+
+/** 과목의 내용 체계 판 목록(최신 판 먼저). */
+export function contentSystemEntries(store, subjectId) {
+  return (store.contentSystems ?? [])
+    .filter((s) => s.subjectId === subjectId)
+    .sort((a, b) => (a.edition ? 1 : 0) - (b.edition ? 1 : 0));
+}
+
+/**
+ * 내용 체계 한 판 → 보기. gradeBand를 주면 그 학년군 칸만 남기고, 여러 학년군에 걸친 병합 칸은
+ * sharedWithGradeBands로 알린다. domain은 영역명 부분 일치 또는 영역 번호.
+ */
+export function contentSystemView(entry, { gradeBand, domain } = {}) {
+  let domains = entry.domains;
+  if (domain) {
+    const d = normalizeText(domain);
+    const no = /^\d{1,2}$/.test(String(domain).trim()) ? String(domain).trim().padStart(2, '0') : null;
+    domains = domains.filter((x) => x.domainNo === no || normalizeText(x.domainKorean).includes(d));
+  }
+  if (gradeBand) domains = domains.filter((x) => x.columns.some((c) => c.gradeBand === gradeBand));
+  return {
+    ...(entry.edition ? { edition: entry.edition, editionNote: entry.editionNote } : {}),
+    ...(entry.intro.length ? { intro: entry.intro } : {}),
+    domains: domains.map((d) => ({
+      domainNo: d.domainNo,
+      domainKorean: d.domainKorean,
+      gradeBands: d.columns.map((c) => c.gradeBand),
+      coreIdeas: d.coreIdeas,
+      contentElements: d.rows.map((r) => {
+        const head = { category: r.category, ...(r.subArea ? { subArea: r.subArea } : {}) };
+        if (!gradeBand) return { ...head, cells: r.cells };
+        const cell = r.cells.find((c) => c.gradeBands.includes(gradeBand));
+        const others = cell ? cell.gradeBands.filter((b) => b !== gradeBand) : [];
+        return { ...head, items: cell?.items ?? [], ...(others.length ? { sharedWithGradeBands: others } : {}) };
+      }).filter((r) => (r.cells ?? r.items).length),
+    })),
+  };
+}
+
 /** 조항 수: 세부 항목(가)·(1))까지 센다. */
 export function countItems(items) {
   return (items ?? []).reduce((n, it) => n + 1 + countItems(it.children), 0);

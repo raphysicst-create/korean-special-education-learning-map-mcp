@@ -4,8 +4,8 @@ import {
   GRADE_BANDS, canonicalCode, normalizeCode, parseBasicCode, resolveGradeBand,
 } from './normalize.mjs';
 import {
-  allotmentForBand, buildRoadmap, countItems, gradeBandOverview, resolveSchoolLevel, resolveSubject,
-  searchStandards, suggestSimilar,
+  allotmentForBand, buildRoadmap, contentSystemEntries, contentSystemView, countItems, gradeBandOverview,
+  notesForStandard, resolveSchoolLevel, resolveSubject, searchStandards, suggestSimilar,
 } from './search.mjs';
 
 const SERVER_INFO = { name: 'korean-special-education-learning-map', version: '0.1.0' };
@@ -60,12 +60,13 @@ function aboutText(store) {
     '# 한국 특수교육 교육과정 학습지도 MCP 서버',
     '',
     `- 데이터 릴리스: ${taxonomyVersion}`,
-    `- 수량: 과목 ${counts.subjects} · 성취기준 ${counts.standards}${counts.operation ? ` · 편성·운영 조항 ${counts.operation.organizationItems + counts.operation.criteriaItems}(배당표 ${counts.operation.tables})` : ''}`,
+    `- 수량: 과목 ${counts.subjects} · 성취기준 ${counts.standards}${counts.details ? ` · 내용 체계 ${counts.details.contentSystemDomains}개 영역(항목 ${counts.details.contentItems}) · 성취기준 해설 ${counts.details.explanations}문단 · 적용 시 고려 사항 ${counts.details.considerations}문단` : ''}${counts.operation ? ` · 편성·운영 조항 ${counts.operation.organizationItems + counts.operation.criteriaItems}(배당표 ${counts.operation.tables})` : ''}`,
     `- 수록 원문 기준 고시: ${(sourceNotice ?? []).join('; ')}`,
     '- 성취기준 원문은 고시의 별책으로서 저작권법 제7조 제2호에 따라 보호받지 않는 저작물이며, 정확성·추적성을 위해 출처를 표기한다.',
-    '- 범위(v0.1): 【별책 3】 기본 교육과정 교과 성취기준, 그리고 【별책 1】 총론 중 기본 교육과정 편성·운영(초·중·고 편제, <표 9>~<표 11> 시간·학점 배당표와 주석, 교육과정 편성·운영 기준 — get_operation_guidelines). 총론의 나머지, 특수교육 전문 교과(직업·생활, 이료), 공통·선택 중심 교육과정은 아직 수록되지 않았다.',
-    '- 편성·운영 조항 원문은 같은 고시의 HWP 판에서 문단 단위로 가져와 PDF와 대조했고, 배당표는 사람이 옮긴 뒤 HWP 표 칸과 대조하고 합계를 검산했다.',
-    '- 수록 판본: 국가교육위원회 고시 제2026-2호(2026.1.21.) 일부개정 반영본. 이 개정으로 바뀐 초1~2 통합교과(건강한 생활 신설, 즐거운 생활 개편)는 2028.3.1. 시행이며, 그 전까지 학교 현장은 이전 고시(제2024-4호) 판을 따른다 — list_subjects의 note 참고. 이 시행 중인 이전 판 즐거운 생활 성취기준 9개도 edition "2024-4"로 함께 수록했다(같은 코드는 get_standard가 두 판을 모두 돌려준다). 다른 과목은 두 판이 같다.',
+    '- 범위(v0.1): 【별책 3】 기본 교육과정 교과의 성취기준, 내용 체계 표(영역별 핵심 아이디어와 지식·이해/과정·기능/가치·태도 내용 요소 — get_content_system), 성취기준 해설·적용 시 고려 사항과 영역 안내(get_standard), 그리고 【별책 1】 총론 중 기본 교육과정 편성·운영(초·중·고 편제, <표 9>~<표 11> 시간·학점 배당표와 주석, 교육과정 편성·운영 기준 — get_operation_guidelines). 별책 3의 과목 성격·목표와 교수·학습 및 평가, 창의적 체험활동·일상생활 활동, 총론의 나머지, 특수교육 전문 교과(직업·생활, 이료), 공통·선택 중심 교육과정은 수록하지 않았다.',
+    '- 편성·운영 조항과 내용 체계·해설 원문은 같은 고시의 HWP 판에서 문단·표 칸 단위로 가져와 PDF와 글자 대조했다. 배당표는 사람이 옮긴 뒤 HWP 표 칸과 대조하고 합계를 검산했다.',
+    "- 원문 오기 보정: 수학 [6수학01-11]·[6수학01-12] 해설의 첫머리가 원문에 '[수학01-12]'로 적혀 있어 [6수학01-12]를 가리키는 것으로 연결했다(문장은 원문 그대로). 사회 내용 체계 표의 세로쓰기 하위 범주는 띄어쓰기가 없어 사회과 본문 표기('도덕적 인성', '인간과 자연의 공존', '역사·문화 소양')를 따랐다.",
+    '- 수록 판본: 국가교육위원회 고시 제2026-2호(2026.1.21.) 일부개정 반영본. 이 개정으로 바뀐 초1~2 통합교과(건강한 생활 신설, 즐거운 생활 개편)는 2028.3.1. 시행이며, 그 전까지 학교 현장은 이전 고시(제2024-4호) 판을 따른다 — list_subjects의 note 참고. 이 시행 중인 이전 판 즐거운 생활 성취기준 9개도 edition "2024-4"로 함께 수록했다(같은 코드는 get_standard가 두 판을 모두 돌려준다). 다른 과목의 성취기준은 두 판이 같다. 바른 생활·슬기로운 생활은 성취기준은 같지만 2026-2호에서 해설·고려 사항·내용 체계 안내 문구가 다듬어져, 이전 판 문구를 previousEditionNotes(get_standard)·previousEdition(get_content_system)으로 함께 준다. 나머지 13과목의 내용 체계·해설은 두 판이 같다.',
     "- 중학교 일부 코드는 고시 원문대로 '09'로 적혀 있다(예: [09수학04-01], [09생영01-01]). '9'로 찾아도 된다.",
     "- 통합교과(바른 생활·슬기로운 생활·건강한 생활·즐거운 생활)는 4개 영역을 중첩한 성취기준이라 영역명을 '통합교과 4개 영역 중첩'으로 표시한다.",
     `- ${DAILY_LIVING_NOTE}`,
@@ -233,10 +234,13 @@ export function createServer(store) {
     'get_standard',
     {
       title: '성취기준 상세',
-      description: '성취기준 코드(공백·대시 이형 무관)로 공식 원문, 과목, 학년군, 영역, 근거 고시를 조회한다. 판이 갈린 코드(즐거운 생활)는 최신 판과 시행 중인 이전 판(edition)을 모두 돌려준다.',
-      inputSchema: { code: z.string().max(100).describe('성취기준 코드 (예: [4국어01-01], 9수학04-01)') },
+      description: '성취기준 코드(공백·대시 이형 무관)로 공식 원문, 과목, 학년군, 영역, 근거 고시와 함께 【별책 3】의 성취기준 해설(explanation)·적용 시 고려 사항(considerations: 이 성취기준, sharedConsiderations: 같은 목록 상자 전체)·영역 안내(domainIntro)를 notes로 조회한다. 판이 갈린 코드(즐거운 생활)는 최신 판과 시행 중인 이전 판(edition)을 모두 돌려주고, 해설 문구만 다듬어진 바른 생활·슬기로운 생활은 이전 판 해설을 previousEditionNotes로 준다.',
+      inputSchema: {
+        code: z.string().max(100).describe('성취기준 코드 (예: [4국어01-01], 9수학04-01)'),
+        includeNotes: z.boolean().optional().describe('해설·고려 사항(notes)을 포함할지 (기본 true)'),
+      },
     },
-    guarded(async ({ code }) => {
+    guarded(async ({ code, includeNotes = true }) => {
       const normalized = normalizeCode(code);
       const canon = canonicalCode(code);
       const hits = store.standardsByCode.get(canon) ?? [];
@@ -246,16 +250,64 @@ export function createServer(store) {
           .flatMap((k) => store.standardsByCode.get(k).map((s) => s.code));
         return fail(`성취기준 ${normalized}을(를) 찾을 수 없습니다.`, [...new Set(similar)]);
       }
+      const editionsOfCode = new Set(hits.map((s) => s.edition ?? null));
       return ok({
         results: hits.map((s) => {
           const note = store.subjectsById.get(s.subjectId)?.note;
+          const notes = includeNotes ? notesForStandard(store, s) : null;
+          // 성취기준은 한 판뿐인데 해설은 판이 갈린 과목(바른 생활·슬기로운 생활) — 이전 판 해설도 준다.
+          const previousEditionNotes = includeNotes && !s.edition
+            ? (store.standardNotes ?? [])
+              .filter((n) => n.subjectId === s.subjectId && n.edition && !editionsOfCode.has(n.edition))
+              .map((n) => ({ edition: n.edition, editionNote: n.editionNote, ...notesForStandard(store, s, n.edition) }))
+              .filter((n) => n.explanation)
+            : [];
           return {
             ...s,
             officialText: store.textsByKey.get(s.key),
             codeStructure: parseBasicCode(s.code),
             ...(note ? { subjectNote: note } : {}),
+            ...(notes ? { notes } : {}),
+            ...(previousEditionNotes.length ? { previousEditionNotes } : {}),
           };
         }),
+      });
+    })
+  );
+
+  server.registerTool(
+    'get_content_system',
+    {
+      title: '내용 체계',
+      description:
+        '과목의 내용 체계 표를 【별책 3】 원문대로 반환한다: 영역별 핵심 아이디어(coreIdeas)와 지식·이해/과정·기능/가치·태도 범주의 학년군별 내용 요소(contentElements). '
+        + 'gradeBand를 주면 그 학년군 칸만(여러 학년군에 걸친 병합 칸은 sharedWithGradeBands), domain을 주면 한 영역만 준다. 사회·수학·과학·체육·생활영어는 범주 아래 하위 영역(subArea)이 있다. '
+        + '통합교과 중 바른 생활·슬기로운 생활·즐거운 생활은 시행 중인 이전 판(2024-4호)도 previousEdition으로 함께 준다.',
+      inputSchema: {
+        subject: z.string().max(100).describe('과목명 또는 과목 id'),
+        gradeBand: GRADE_BAND,
+        domain: z.string().max(100).optional().describe('영역명(부분 일치) 또는 영역 번호 (예: 듣기·말하기, 2)'),
+      },
+    },
+    guarded(async ({ subject, gradeBand, domain }) => {
+      const subjectId = subjectIdOrThrow(store, subject);
+      const meta = store.subjectsById.get(subjectId);
+      const band = gradeBandOrThrow(gradeBand);
+      if (band && !meta.gradeBands.includes(band)) {
+        throw new Error(`${meta.subjectKorean}은(는) ${band} 학년군에 편성되지 않았습니다. 편성 학년군: ${meta.gradeBands.join(', ')}`);
+      }
+      const entries = contentSystemEntries(store, subjectId);
+      if (!entries.length) return fail('내용 체계 데이터가 수록되지 않은 설치본입니다.');
+      const [current, ...previous] = entries.map((e) => contentSystemView(e, { gradeBand: band, domain }));
+      if (domain && !current.domains.length) {
+        throw new Error(`영역 "${domain}"을(를) 찾을 수 없습니다. ${meta.subjectKorean} 영역: ${entries[0].domains.map((d) => `${Number(d.domainNo)} ${d.domainKorean}`).join(', ')}`);
+      }
+      return ok({
+        subjectId, subjectKorean: meta.subjectKorean, ...(band ? { gradeBand: band } : {}),
+        ...(meta.note ? { note: meta.note } : {}),
+        ...current,
+        ...(previous.length ? { previousEdition: previous } : {}),
+        seeAlso: '성취기준 원문은 get_learning_roadmap, 성취기준별 해설·적용 시 고려 사항은 get_standard.',
       });
     })
   );
@@ -288,6 +340,7 @@ export function createServer(store) {
         ...(previous && previous.standardCount ? {
           previousEdition: { edition: meta.previousEdition.edition, note: meta.previousEdition.note, ...previous },
         } : {}),
+        seeAlso: '영역별 핵심 아이디어·내용 요소는 get_content_system, 성취기준별 해설·적용 시 고려 사항은 get_standard.',
       });
     })
   );
@@ -296,7 +349,7 @@ export function createServer(store) {
 }
 
 export const TOOL_NAMES = [
-  'get_grade_band_overview', 'get_learning_roadmap', 'get_operation_guidelines', 'get_standard',
-  'list_subjects', 'search_standards',
+  'get_content_system', 'get_grade_band_overview', 'get_learning_roadmap', 'get_operation_guidelines',
+  'get_standard', 'list_subjects', 'search_standards',
 ];
 export { ABOUT_URI };

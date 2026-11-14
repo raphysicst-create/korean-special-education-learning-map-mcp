@@ -108,6 +108,16 @@ test('get_operation_guidelines: 편성·운영 데이터가 없는 설치본은 
   assert.ok(r.content[0].text.includes('편성·운영'));
 });
 
+test('내용 체계·해설 데이터가 없는 설치본: get_content_system은 오류, get_standard는 notes 없이 준다', async () => {
+  const client = await connect();
+  const r = await call(client, 'get_content_system', { subject: '국어' });
+  assert.ok(r.isError);
+  assert.ok(r.content[0].text.includes('내용 체계 데이터가 수록되지 않은 설치본'));
+  const s = payload(await call(client, 'get_standard', { code: '[4국01-01]' }));
+  assert.equal(s.results[0].notes, undefined);
+  assert.equal(s.results[0].previousEditionNotes, undefined);
+});
+
 test('get_learning_roadmap: 학년군 → 영역 → 성취기준', async () => {
   const client = await connect();
   const p = payload(await call(client, 'get_learning_roadmap', { subject: '국어' }));

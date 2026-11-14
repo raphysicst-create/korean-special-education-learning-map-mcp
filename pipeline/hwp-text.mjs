@@ -129,34 +129,124 @@ export function paraText(payload) {
   return out.toString('utf16le');
 }
 
+const HWPTAG_PARA_HEADER = 66;
 const HWPTAG_PARA_TEXT = 67;
+const HWPTAG_CTRL_HEADER = 71;
+const HWPTAG_LIST_HEADER = 72;
+const HWPTAG_TABLE = 77;
 
-/** HWP 5.0 파일 버퍼 → 문단 문자열 배열(문서 순서, 표 칸 포함, 빈 문단 제외 안 함). */
-export function hwpParagraphs(buf) {
-  const streams = readCompoundFile(buf);
+/**
+ * FileHeader를 읽어 HWP 5.0 문서인지, 암호·배포용(복사 방지)이 아닌지 확인한다. 받은 파일 검사에도 쓴다.
+ * @returns {{ version: string, compressed: boolean }}
+ */
+export function checkHwp(buf, streams = readCompoundFile(buf)) {
   const header = streams.FileHeader;
   if (!header || !header.subarray(0, 17).toString('latin1').startsWith('HWP Document File')) {
     throw new Error('HWP 5.0 문서가 아닙니다.');
   }
+  const v = header.readUInt32LE(32);
   const flags = header.readUInt32LE(36);
+  if (flags & 0x2) throw new Error('암호가 걸린 HWP 문서는 읽지 않습니다.');
   if (flags & 0x4) throw new Error('배포용(복사 방지) HWP 문서는 읽지 않습니다.');
-  const compressed = (flags & 0x1) !== 0;
+  if (!Object.keys(streams).some((p) => /^BodyText\/Section\d+$/.test(p))) throw new Error('HWP 본문(BodyText) 스트림이 없습니다.');
+  return { version: [v >>> 24, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff].join('.'), compressed: (flags & 0x1) !== 0 };
+}
+
+/** 본문 레코드열: { tag, level, data } — 구역(Section) 순서대로 이어 붙인다. */
+function hwpRecords(buf) {
+  const streams = readCompoundFile(buf);
+  const { compressed } = checkHwp(buf, streams);
   const sections = Object.keys(streams)
     .filter((p) => /^BodyText\/Section\d+$/.test(p))
     .sort((a, b) => Number(a.match(/\d+$/)[0]) - Number(b.match(/\d+$/)[0]));
-  const paragraphs = [];
+  const records = [];
   for (const path of sections) {
     const data = compressed ? inflateRawSync(streams[path]) : streams[path];
     let pos = 0;
     while (pos + 4 <= data.length) {
       const h = data.readUInt32LE(pos);
       pos += 4;
-      const tag = h & 0x3ff;
       let size = h >>> 20;
       if (size === 0xfff) { size = data.readUInt32LE(pos); pos += 4; }
-      if (tag === HWPTAG_PARA_TEXT) paragraphs.push(paraText(data.subarray(pos, pos + size)));
+      if (pos + size > data.length) throw new Error(`${path}: 레코드가 스트림 끝을 넘습니다.`);
+      records.push({ tag: h & 0x3ff, level: (h >>> 10) & 0x3ff, data: data.subarray(pos, pos + size) });
       pos += size;
     }
   }
-  return paragraphs;
+  return records;
+}
+
+/** HWP 5.0 파일 버퍼 → 문단 문자열 배열(문서 순서, 표 칸 포함, 빈 문단 제외 안 함). */
+export function hwpParagraphs(buf) {
+  return hwpRecords(buf).filter((r) => r.tag === HWPTAG_PARA_TEXT).map((r) => paraText(r.data));
+}
+
+// 컨트롤 id는 4글자를 거꾸로 저장한다(' lbt' → 'tbl ').
+const ctrlId = (data) => data.subarray(0, 4).toString('latin1').split('').reverse().join('');
+
+/**
+ * HWP 5.0 → 본문 최상위 문단 배열. 문단은 { text, ctrls }이고, 표 컨트롤은
+ * { id: 'tbl ', rows, cols, cells: [{ row, col, rowSpan, colSpan, paras }] }로 칸 위치까지 남긴다
+ * (칸 안 문단도 같은 모양 — 표 안 표도 그대로 따라간다). 그 밖의 컨트롤(글상자·머리말 등)은
+ * { id, texts }로 안의 글자만 모은다. 레코드 수준(level)으로 소속을 가린다.
+ */
+export function hwpBlocks(buf) {
+  const recs = hwpRecords(buf);
+  let i = 0;
+  const parseParas = (level, max = Infinity) => {
+    const out = [];
+    while (i < recs.length && out.length < max) {
+      const r = recs[i];
+      if (r.level < level) break;
+      if (r.tag !== HWPTAG_PARA_HEADER || r.level !== level) { i += 1; continue; }
+      i += 1;
+      const para = { text: '', ctrls: [] };
+      while (i < recs.length && recs[i].level > level) {
+        const c = recs[i];
+        if (c.tag === HWPTAG_PARA_TEXT && c.level === level + 1) { para.text = paraText(c.data); i += 1; }
+        else if (c.tag === HWPTAG_CTRL_HEADER && c.level === level + 1) para.ctrls.push(parseCtrl(level + 1));
+        else i += 1;
+      }
+      out.push(para);
+    }
+    return out;
+  };
+  const parseCtrl = (level) => {
+    const id = ctrlId(recs[i].data);
+    i += 1;
+    if (id === 'tbl ') {
+      const table = { id, rows: 0, cols: 0, cells: [] };
+      while (i < recs.length && recs[i].level > level) {
+        const c = recs[i];
+        if (c.tag === HWPTAG_TABLE && c.level === level + 1) {
+          table.rows = c.data.readUInt16LE(4);
+          table.cols = c.data.readUInt16LE(6);
+          i += 1;
+        } else if (c.tag === HWPTAG_LIST_HEADER && c.level === level + 1) {
+          // LIST_HEADER: 문단 수(2) + 예약(2) + 속성(4) 다음에 칸 주소(열·행)와 병합 범위(열·행).
+          const n = c.data.readUInt16LE(0);
+          const cell = {
+            col: c.data.readUInt16LE(8), row: c.data.readUInt16LE(10),
+            colSpan: c.data.readUInt16LE(12), rowSpan: c.data.readUInt16LE(14),
+          };
+          i += 1;
+          cell.paras = parseParas(level + 1, n);
+          table.cells.push(cell);
+        } else i += 1;
+      }
+      for (const cell of table.cells) {
+        if (cell.row + cell.rowSpan > table.rows || cell.col + cell.colSpan > table.cols) {
+          throw new Error(`표 칸 주소가 표 크기(${table.rows}x${table.cols})를 넘습니다: r${cell.row}c${cell.col}`);
+        }
+      }
+      return table;
+    }
+    const other = { id, texts: [] };
+    while (i < recs.length && recs[i].level > level) {
+      if (recs[i].tag === HWPTAG_PARA_TEXT) other.texts.push(paraText(recs[i].data));
+      i += 1;
+    }
+    return other;
+  };
+  return parseParas(0);
 }

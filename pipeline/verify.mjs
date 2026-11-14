@@ -9,8 +9,11 @@ import { fileURLToPath } from 'node:url';
 import { GRADE_BANDS, canonicalCode, parseBasicCode } from '../src/normalize.mjs';
 import { numberingGaps } from './extract-standards.mjs';
 import { HANGUL_ORDER, operationCounts } from './extract-operation.mjs';
+import { CATEGORIES, detailCounts } from './extract-details.mjs';
 
 export const OPERATION_FILE = 'operation-guidelines.json';
+// 카테고리 폴더의 내용 체계·해설 파일(있으면 둘 다 있어야 한다).
+export const DETAIL_FILES = ['content-systems.json', 'standard-notes.json'];
 
 const here = dirname(fileURLToPath(import.meta.url));
 const defaultDataDir = join(here, '..', 'data', 'kr');
@@ -81,6 +84,15 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
     counts.standards += current;
     counts.previousEdition += standards.length - current;
     counts.categories[category] = current;
+
+    const present = DETAIL_FILES.filter((f) => existsSync(join(dataDir, category, f)));
+    if (present.length === 1) errors.push(`${category}: ${present[0]}만 있습니다 — 내용 체계·해설 파일은 함께 있어야 합니다.`);
+    if (present.length === DETAIL_FILES.length) {
+      const d = verifyDetails(category, read(`${category}/content-systems.json`).subjects, read(`${category}/standard-notes.json`).subjects, standards, subjectById);
+      errors.push(...d.errors);
+      if (counts.details) errors.push('내용 체계·해설 수량은 아직 카테고리 하나만 셉니다 — verify를 확장하세요.');
+      counts.details = d.counts;
+    }
   }
   for (const s of subjects) {
     const actual = perSubject.get(s.id) ?? 0;
@@ -103,6 +115,16 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
     errors.push(`게이트에 편성·운영 수량이 있는데 ${OPERATION_FILE}이(가) 없습니다.`);
   }
 
+  if (gates?.details) {
+    if (!counts.details) errors.push('게이트에 내용 체계·해설 수량이 있는데 데이터 파일이 없습니다.');
+    else {
+      for (const [k, v] of Object.entries(gates.details)) {
+        const got = counts.details[k];
+        if (JSON.stringify(got) !== JSON.stringify(v)) errors.push(`게이트 불일치: 내용 체계·해설 ${k} 기대 ${JSON.stringify(v)}, 실제 ${JSON.stringify(got)}`);
+      }
+    }
+  }
+
   if (gates) {
     for (const [category, expected] of Object.entries(gates.categories ?? {})) {
       const actual = counts.categories[category];
@@ -123,6 +145,107 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
 }
 
 const num = (v) => Number(String(v).replace(/,/g, '').match(/^\d+/)?.[0] ?? NaN);
+
+// HWP 전용(사용자 정의) 영역 글자나 대체 문자(U+FFFD)가 남았으면 글자 깨짐이다.
+const BROKEN_GLYPH = /[\ue000-\uf8ff\u{f0000}-\u{10ffff}\ufffd]/u;
+// 해설·고려 사항·안내 문단은 '다.'로 끝난다. 원문이 '다,'로 끝낸 문단 2개(오기)도 원문대로 받는다.
+const NOTE_END = /다[.,]$/;
+const squashName = (v) => String(v ?? '').normalize('NFC').replace(/[・･⋅∙ㆍ]/g, '·').replace(/\s+/g, '');
+
+/**
+ * 내용 체계(content-systems.json)·해설(standard-notes.json) 검증.
+ *  - 판 구성: 두 파일의 과목·판 구성이 같고, 성취기준이 있는 과목마다 최신 판이 있으며, 이전 판은 editionNote가 있다.
+ *  - 내용 체계: 영역이 그 판 성취기준의 영역과 같고(번호·이름), 핵심 아이디어가 있고, 세 범주가 다 있으며,
+ *    열·칸의 학년군이 과목 편성 학년군 안에 있다.
+ *  - 해설: 목록 상자 코드가 그 판 성취기준을 정확히 한 번씩 덮고(학년군·영역 일치), 해설·고려 사항이 가리키는
+ *    코드가 상자 안에 있으며, 문단이 '다.'로 끝나고 깨진 글자가 없다.
+ * 이전 판 성취기준이 따로 없는 과목(바른 생활·슬기로운 생활)의 이전 판은 최신 판 성취기준과 맞춘다.
+ */
+export function verifyDetails(category, contentSystems, standardNotes, standards, subjectById) {
+  const errors = [];
+  const keyOf = (s) => `${s.subjectId}@${s.edition ?? ''}`;
+  const where = (s) => `${category} ${s.subjectId}${s.edition ? `@${s.edition}` : ''}`;
+  const standardsFor = (subjectId, edition) => {
+    const own = standards.filter((x) => x.subjectId === subjectId && (x.edition ?? null) === (edition ?? null));
+    return own.length || !edition ? own : standards.filter((x) => x.subjectId === subjectId && !x.edition);
+  };
+  const csKeys = contentSystems.map(keyOf).sort();
+  const nKeys = standardNotes.map(keyOf).sort();
+  if (csKeys.join() !== nKeys.join()) errors.push(`${category}: 내용 체계와 해설의 과목·판 구성이 다릅니다.`);
+  if (new Set(csKeys).size !== csKeys.length || new Set(nKeys).size !== nKeys.length) errors.push(`${category}: 내용 체계·해설에 같은 과목·판이 두 번 있습니다.`);
+  for (const id of new Set(standards.filter((x) => !x.edition).map((x) => x.subjectId))) {
+    if (!contentSystems.some((x) => x.subjectId === id && !x.edition)) errors.push(`${category} ${id}: 최신 판 내용 체계·해설이 없습니다.`);
+  }
+  for (const x of [...contentSystems, ...standardNotes]) {
+    if (!subjectById.has(x.subjectId)) errors.push(`${where(x)}: 미지 과목`);
+    if (x.edition && !x.editionNote) errors.push(`${where(x)}: 이전 판 안내(editionNote) 누락`);
+  }
+
+  for (const x of contentSystems) {
+    const std = standardsFor(x.subjectId, x.edition);
+    const domains = new Map(std.map((t) => [t.domainNo, t.domainKorean]));
+    const bands = subjectById.get(x.subjectId)?.gradeBands ?? [];
+    const got = x.domains.map((d) => d.domainNo).sort().join(',');
+    const want = [...domains.keys()].sort().join(',');
+    if (got !== want) errors.push(`${where(x)}: 내용 체계 영역(${got})이 성취기준 영역(${want})과 다릅니다.`);
+    for (const t of x.intro) if (BROKEN_GLYPH.test(t) || !NOTE_END.test(t)) errors.push(`${where(x)}: 내용 체계 안내 문장 이상 …${t.slice(-15)}`);
+    for (const d of x.domains) {
+      const w = `${where(x)} 내용 체계 ${d.domainNo} ${d.domainKorean}`;
+      if (domains.has(d.domainNo) && squashName(domains.get(d.domainNo)) !== squashName(d.domainKorean)) errors.push(`${w}: 영역 이름이 성취기준('${domains.get(d.domainNo)}')과 다릅니다.`);
+      if (!d.coreIdeas.length) errors.push(`${w}: 핵심 아이디어 없음`);
+      for (const t of d.coreIdeas) if (BROKEN_GLYPH.test(t) || !/다\.$/.test(t)) errors.push(`${w}: 핵심 아이디어 문장 이상 …${t.slice(-15)}`);
+      const colBands = d.columns.map((c) => c.gradeBand);
+      if (!colBands.length || colBands.some((b) => !bands.includes(b))) errors.push(`${w}: 열 학년군(${colBands.join(',')})이 편성 학년군(${bands.join(',')}) 밖입니다.`);
+      for (const cat of CATEGORIES) if (!d.rows.some((r) => r.category === cat)) errors.push(`${w}: 범주 '${cat}' 없음`);
+      for (const r of d.rows) {
+        if (!CATEGORIES.includes(r.category)) errors.push(`${w}: 미지 범주 '${r.category}'`);
+        for (const c of r.cells) {
+          if (!c.gradeBands.length || c.gradeBands.some((b) => !colBands.includes(b))) errors.push(`${w} ${r.category}: 칸 학년군 이상(${c.gradeBands.join(',')})`);
+          if (!c.items.length) errors.push(`${w} ${r.category}: 빈 칸`);
+          for (const it of c.items) if (!it.trim() || BROKEN_GLYPH.test(it)) errors.push(`${w} ${r.category}: 내용 요소 글자 이상 '${it}'`);
+        }
+      }
+    }
+  }
+
+  for (const x of standardNotes) {
+    const want = new Map(standardsFor(x.subjectId, x.edition).map((t) => [canonicalCode(t.code), t]));
+    const seen = new Map();
+    const textOk = (t) => t && !BROKEN_GLYPH.test(t) && NOTE_END.test(t);
+    for (const t of x.intro) if (!textOk(t)) errors.push(`${where(x)}: 성취기준 안내 문장 이상 …${t.slice(-15)}`);
+    for (const sec of x.sections) {
+      const w = `${where(x)} 해설 ${sec.gradeBand} ${sec.domainNo}`;
+      for (const t of sec.intro) if (!textOk(t)) errors.push(`${w}: 영역 안내 문장 이상 …${t.slice(-15)}`);
+      if (!sec.groups.length) errors.push(`${w}: 묶음 없음`);
+      for (const g of sec.groups) {
+        if (!g.codes.length) errors.push(`${w}: 목록 상자 없음`);
+        const inGroup = new Set(g.codes.map(canonicalCode));
+        for (const c of g.codes) {
+          const t = want.get(canonicalCode(c));
+          if (!t) { errors.push(`${w}: 상자 코드 ${c}이(가) 그 판 성취기준에 없습니다.`); continue; }
+          seen.set(canonicalCode(c), (seen.get(canonicalCode(c)) ?? 0) + 1);
+          if (t.gradeBand !== sec.gradeBand || t.domainNo !== sec.domainNo) errors.push(`${w}: ${c}의 학년군·영역(${t.gradeBand} ${t.domainNo})이 절과 다릅니다.`);
+        }
+        for (const t of g.intro) if (!textOk(t)) errors.push(`${w}: 하위 영역 안내 문장 이상 …${t.slice(-15)}`);
+        for (const e of g.explanations) if (!e.codes.length) errors.push(`${w}: 가리키는 성취기준이 없는 해설`);
+        for (const e of [...g.explanations, ...g.considerations]) {
+          const outside = e.codes.filter((c) => !inGroup.has(canonicalCode(c)));
+          if (outside.length) errors.push(`${w}: 상자 밖 코드 ${outside.join(',')}`);
+          if (!textOk(e.text)) errors.push(`${w} ${e.codes.join(',')}: 문장 종결·글자 이상 …${String(e.text).slice(-15)}`);
+        }
+      }
+    }
+    for (const [code] of want) {
+      const n = seen.get(code) ?? 0;
+      if (n !== 1) errors.push(`${where(x)}: ${code}이(가) 목록 상자에 ${n}번 나옵니다(1번이어야 함).`);
+    }
+  }
+
+  const merged = contentSystems.map((c) => ({
+    ...c, contentSystem: { intro: c.intro, domains: c.domains }, notes: standardNotes.find((n) => keyOf(n) === keyOf(c)),
+  })).filter((m) => m.notes);
+  return { errors, counts: detailCounts(merged) };
+}
 
 /**
  * 편성·운영 데이터 검증: 배당표 검산(교과(군) 합 = 소계, 소계 + 나머지 = 총계, 1~2학년 교과
@@ -180,6 +303,9 @@ export function verifyOperation(op) {
 export function computeManifestFiles(dataDir) {
   const files = {};
   const rels = ['subjects.json', ...listCategories(dataDir).flatMap((c) => CATEGORY_FILES.map((f) => `${c}/${f}`))];
+  for (const c of listCategories(dataDir)) {
+    for (const f of DETAIL_FILES) if (existsSync(join(dataDir, c, f))) rels.push(`${c}/${f}`);
+  }
   if (existsSync(join(dataDir, OPERATION_FILE))) rels.push(OPERATION_FILE);
   for (const rel of rels) {
     files[rel] = { sha256: createHash('sha256').update(readFileSync(join(dataDir, rel))).digest('hex') };
@@ -229,7 +355,8 @@ function main() {
       .map((a) => `${a.notice} 【별책 ${a.annexNo}】 ${a.titleKorean}${a.section ? ` (${a.section})` : ''}`))],
   });
   const op = counts.operation ? ` · 편성·운영 ${counts.operation.organizationItems + counts.operation.criteriaItems}항` : '';
-  console.error(`✓ 검증 통과 — 과목 ${counts.subjects} · 성취기준 ${counts.standards}건${op}, manifest.json 기록`);
+  const det = counts.details ? ` · 내용 체계 ${counts.details.contentSystemDomains}영역 · 해설 ${counts.details.explanations}·고려 사항 ${counts.details.considerations}문단` : '';
+  console.error(`✓ 검증 통과 — 과목 ${counts.subjects} · 성취기준 ${counts.standards}건${det}${op}, manifest.json 기록`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -61,9 +61,11 @@ npm run pipeline:discover
 ```
 npm run pipeline:extract -- --record-gates
 npm run pipeline:operation -- --record-gates
+npm run pipeline:details -- --record-gates
 npm run pipeline:verify
 ```
 
+- `pipeline:details`는 별책 3 HWP에서 내용 체계 표와 성취기준 해설·적용 시 고려 사항을 가져와 별책 3 PDF와 대조하고, 이전 판 HWP와 비교한다. 원문 오기·세로쓰기 머리 칸은 `pipeline/details-exceptions.json`에 근거와 함께 적어야 통과한다. 새 HWP 전용 글자가 나오면 지면 이미지로 확인해 `cleanText`의 `PUA_MAP`에 더한다.
 - `pipeline:operation`은 별책 1 HWP에서 기본 교육과정 편성·운영 조항을 가져온다. 배당표 전사(`pipeline/operation-tables.json`)를 HWP 표 칸과 대조하고, 별책 1 PDF와도 대조한다. 실패하면 메시지가 가리키는 칸이나 문단을 지면과 비교해 고친다.
 
 - extract의 미해결 목록은 `pipeline/exceptions.json`에 수동 보정한다. 키는 `basic:[코드]` 또는 `[코드]`, 값은 원문 문자열 또는 `{ "text": "...", "domainKorean": "..." }`. 원문은 PDF에서 그대로 옮긴다.
@@ -110,3 +112,8 @@ npm run pipeline:verify
   - 결과: 학교급 3, 편제 14항, 운영 기준 45항, 배당표 3개(<표 9>~<표 11>).
   - 검증: 배당표 3개를 PDF 지면 이미지와 칸 단위로 대조했다. HWP 재추출은 Python olefile 판독 결과와 글자 단위로 같았다.
 - **이전 판 즐거운 생활(2026-11-14):** 2024-4호 판 별책 3에서 즐생 9건을 `edition: "2024-4"`로 함께 수록했다. 건강한 생활은 2026-2호 신설(currentOnly), 나머지 14과목은 두 판이 양방향으로 같음을 자동 확인했다.
+- **내용 체계·해설(별책 3 HWP, 2026-11-14):**
+  - 원본 확인: NCIC 목록 API로 2026-2호(seq 10004193)·2024-4호(seq 10003978) 별책 3 HWP를 받았다. 둘 다 HWP 5.1.1.0이고 암호·배포용이 아니다. 표지 고시 번호가 맞고, 출시 성취기준 코드·원문이 전부 들어 있으며, PDF와 한글 글자 빈도 차이는 0.6%(쪽 머리글)였다.
+  - 결과: 내용 체계 16과목 47개 영역 1,382항목, 해설 679문단(성취기준 691개 모두), 고려 사항 667문단. 이전 판은 즐거운 생활·바른 생활·슬기로운 생활.
+  - 검증: 모든 문단·항목이 PDF 텍스트에 있다. 수학 '수와 연산', 체육 '스포츠' 표를 지면 이미지와 칸 단위로 대조했다. HWP 전용 기호 3종은 지면 이미지로 확인했다.
+  - 원문 오기 1건(수학 `[수학01-12]`)과 사회 세로쓰기 하위 범주 6개를 `details-exceptions.json`에 근거와 함께 적었다.

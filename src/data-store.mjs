@@ -64,8 +64,36 @@ export function createStore(dataDir = defaultDataDir) {
     ? readVerified(dataDir, manifest, 'operation-guidelines.json')
     : null;
 
+  // 【별책 3】 내용 체계 표와 성취기준 해설·적용 시 고려 사항. manifest에 있을 때만 싣는다.
+  const contentSystems = [];
+  const standardNotes = [];
+  for (const category of categories) {
+    const csRel = `${category}/content-systems.json`;
+    const notesRel = `${category}/standard-notes.json`;
+    if (manifest.files[csRel]) {
+      for (const s of readVerified(dataDir, manifest, csRel).subjects) contentSystems.push({ ...s, category });
+    }
+    if (manifest.files[notesRel]) {
+      for (const s of readVerified(dataDir, manifest, notesRel).subjects) standardNotes.push({ ...s, category });
+    }
+  }
+  // 성취기준 코드(canonical) → 그 코드가 든 해설 묶음들(판별로 하나씩).
+  const notesByCode = new Map();
+  for (const subjectNotes of standardNotes) {
+    for (const section of subjectNotes.sections) {
+      for (const group of section.groups) {
+        for (const c of group.codes) {
+          const key = canonicalCode(c);
+          if (!notesByCode.has(key)) notesByCode.set(key, []);
+          notesByCode.get(key).push({ subjectNotes, section, group });
+        }
+      }
+    }
+  }
+
   return {
     manifest, subjects, categories, allStandards, textsByKey, operation,
+    contentSystems, standardNotes, notesByCode,
     standardsByCode, standardsByKey,
     subjectsById: new Map(subjects.map((s) => [s.id, s])),
     gradeBands: GRADE_BANDS,

@@ -12,6 +12,33 @@
   "categories": {
    "basic": 691
   },
+  "details": {
+   "contentSystemSubjects": 16,
+   "contentSystemDomains": 47,
+   "contentItems": 1382,
+   "noteSections": 140,
+   "noteGroups": 212,
+   "explanations": 679,
+   "considerations": 667,
+   "standardsWithExplanation": 691,
+   "previousEdition": {
+    "joyful-living": {
+     "contentItems": 21,
+     "explanations": 9,
+     "considerations": 9
+    },
+    "right-living": {
+     "contentItems": 20,
+     "explanations": 10,
+     "considerations": 10
+    },
+    "wise-living": {
+     "contentItems": 22,
+     "explanations": 11,
+     "considerations": 11
+    }
+   }
+  },
   "operation": {
    "schoolLevels": 3,
    "organizationItems": 14,
@@ -28,6 +55,12 @@
   },
   "basic/standard-texts.json": {
    "sha256": "708290cbe1d500893117283c12dcf01bbe7193f45d893203df42ce86240971f8"
+  },
+  "basic/content-systems.json": {
+   "sha256": "6da818a3da9f92199032e9df16d49899bbf82ebbee2738bf79dee9ba806b7281"
+  },
+  "basic/standard-notes.json": {
+   "sha256": "bfb40425c094d03db8048ecb393ec0532b693a62fb32c61fea7d023450293f57"
   },
   "operation-guidelines.json": {
    "sha256": "d5d6790f1ee6db6e8faee9359316ceb0a5191e63cbe5171966d867677cfa9b22"

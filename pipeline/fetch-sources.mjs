@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkHwp } from './hwp-text.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..');
@@ -67,11 +68,14 @@ async function resolveAnnex(annex, pdfDir, { pin, allAnnexes }) {
     if (!MAGIC[format](body)) {
       throw new Error(`${label} 받은 파일 형식이 맞지 않습니다 — URL이 바뀌었을 수 있습니다.`);
     }
+    // HWP는 첫머리만으로는 모자란다 — 복합 문서 구조·FileHeader·암호/배포용 여부까지 확인한다.
+    if (format === 'hwp') checkHwp(body);
     mkdirSync(pdfDir, { recursive: true });
     name = `[별책${annex.annexNo}] ${annex.titleKorean}(${annex.id}).${format}`;
     writeFileSync(join(pdfDir, name), body);
   }
   const path = join(pdfDir, name);
+  if (format === 'hwp') checkHwp(readFileSync(path));
   const hash = sha256Hex(readFileSync(path));
   if (annex.sha256 === null) {
     if (!pin) {

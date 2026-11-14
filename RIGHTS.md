@@ -2,7 +2,7 @@
 
 확인일: 2026-11-14
 
-이 문서는 `korean-special-education-learning-map-mcp`가 성취기준·편성·운영 원문을 추출한 고시 파일(PDF·HWP)의 공식 고시 편입 근거와 파일 동일성을 기록합니다. 법률 자문이 아닙니다.
+이 문서는 `korean-special-education-learning-map-mcp`가 성취기준·내용 체계·해설·편성·운영 원문을 추출한 고시 파일(PDF·HWP)의 공식 고시 편입 근거와 파일 동일성을 기록합니다. 법률 자문이 아닙니다.
 
 ## 판단 기준
 
@@ -18,6 +18,8 @@
 |---|---|---|---|---|---|
 | 3 | 기본 교육과정 (제2026-2호 일부개정 포함) | [국가교육과정정보센터](https://ncic.re.kr/inv/org/download.do?year=2026&seq=10004224&orgType=ogi4) | `7e1dc0612fa4fa8e4050c2d015e373539a23d5c4691abad7ddd14996e5e2f1e5` | 고시 별책 | 보호대상 제외 |
 | 3 | 기본 교육과정 (제2024-4호 일부개정 포함) — 시행 중인 이전 판 즐거운 생활 9개만 수록 | [국가교육과정정보센터](https://ncic.re.kr/inv/org/download.do?year=2024&seq=10003977&orgType=ogi4) | `7d3dc32f5b830dee306fd3d1e1f482f22fa8dce47e39e3070bd8cb47eb772ef9` | 고시 별책 | 보호대상 제외 |
+| 3 | 기본 교육과정 (제2026-2호 일부개정 포함) — 내용 체계 표·성취기준 해설·적용 시 고려 사항 원문 추출용 HWP | [국가교육과정정보센터](https://ncic.re.kr/inv/org/download.do?year=2026&seq=10004193&orgType=ogi4) | `88f0f1a00e3b05337cc1b1d10282881beb68a104cb488f4a07ea3730251602b1` | 고시 별책 | 보호대상 제외 |
+| 3 | 기본 교육과정 (제2024-4호 일부개정 포함) — 시행 중인 이전 판 바른 생활·슬기로운 생활·즐거운 생활의 내용 체계·해설만 수록, 원문 추출용 HWP | [국가교육과정정보센터](https://ncic.re.kr/inv/org/download.do?year=2024&seq=10003978&orgType=ogi4) | `bf0b245351a69c800e852343e1e02ca9aa0d9020e3eb2c0c980c4785c7597214` | 고시 별책 | 보호대상 제외 |
 | 1 | 특수교육 교육과정 총론 (제2026-2호 일부개정 포함) — Ⅲ-3 기본 교육과정 편성·운영만 수록, 원문 추출용 HWP | [국가교육과정정보센터](https://ncic.re.kr/inv/org/download.do?year=2026&seq=10004191&orgType=ogi4) | `6f50c7b62171d7e6ae7fd284bc8ce38caff717f68ae352afbdd19cdcda8e4fe3` | 고시 별책 | 보호대상 제외 |
 | 1 | 같은 별책 1의 PDF — HWP 추출 대조용(배포 데이터의 출처 아님) | [국가교육과정정보센터](https://ncic.re.kr/inv/org/download.do?year=2026&seq=10004192&orgType=ogi4) | `d73a997e6eb92fdd8f74cbc08c873d60a9cc2b5ae4900494751970a0f5de4ced` | 고시 별책 | 보호대상 제외 |
 

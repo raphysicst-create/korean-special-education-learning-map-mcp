@@ -32,5 +32,32 @@
   "organizationItems": 14,
   "criteriaItems": 45,
   "tables": 3
+ },
+ "details": {
+  "contentSystemSubjects": 16,
+  "contentSystemDomains": 47,
+  "contentItems": 1382,
+  "noteSections": 140,
+  "noteGroups": 212,
+  "explanations": 679,
+  "considerations": 667,
+  "standardsWithExplanation": 691,
+  "previousEdition": {
+   "joyful-living": {
+    "contentItems": 21,
+    "explanations": 9,
+    "considerations": 9
+   },
+   "right-living": {
+    "contentItems": 20,
+    "explanations": 10,
+    "considerations": 10
+   },
+   "wise-living": {
+    "contentItems": 22,
+    "explanations": 11,
+    "considerations": 11
+   }
+  }
  }
 }
