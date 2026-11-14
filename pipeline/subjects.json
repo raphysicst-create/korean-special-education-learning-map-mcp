@@ -1,40 +1,110 @@
 {
- "note": "성취기준 코드 접두어 → 과목 대응표. `npm run pipeline:discover` 결과(.cache/discovery-*.json)의 prefixes를 PDF 목차와 대조해 채운다. 추측으로 채우지 말 것 — 비어 있는 접두어는 extract가 unmapped-prefix로 실패시킨다. id는 영어 kebab-case. domainKorean은 PDF에 '(N) 영역명' 머리글이 없는 과목에만 쓴다. note는 list_subjects·get_learning_roadmap에 그대로 나간다.",
- "confirmedFrom": "국가교육위원회 고시 제2026-2호 반영본 별책 3 목차(18개 교과·활동)와 discover 보고서(접두어 16종, 성취기준 691건)를 2026-11-14에 대조. 창의적 체험활동·일상생활 활동은 성취기준 코드가 없어 대응표에 없다.",
+ "note": "성취기준 코드 접두어 → 과목 대응표(카테고리별). `npm run pipeline:discover` 결과(.cache/discovery-*.json)의 prefixes를 별책 목차와 대조해 채운다. 추측으로 채우지 말 것 — 대응표에도 outOfScope에도 없는 접두어는 extract가 unmapped-prefix로 실패시킨다. 키는 로마 숫자를 ASCII로 바꾼 접두어다('[12작업Ⅰ01-01]' → '작업I'). id는 영어 kebab-case. domainKorean은 별책에 '(N) 영역명' 머리글이 없는 과목에만 쓴다. bandCodes가 있으면 그 학년군 코드의 성취기준만 그 과목이다(같은 접두어를 공통 교육과정 과목과 함께 쓰는 전문 교과). note는 list_subjects·get_learning_roadmap에 그대로 나간다.",
+ "confirmedFrom": "basic: 국가교육위원회 고시 제2026-2호 반영본 별책 3 목차(18개 교과·활동)와 discover 보고서(접두어 16종, 성취기준 691건)를 2026-11-14에 대조. 창의적 체험활동·일상생활 활동은 성취기준 코드가 없어 대응표에 없다. special-vocational·ilyo: 같은 고시 반영본 별책 2 목차의 '[선택 중심 교육과정] - 특수교육 전문 교과'(직업·생활 14과목, 이료 10과목), 별책 1 총론 <표 8> 특수교육 전문 교과 과목표, discover 보고서(전문 교과 접두어 24종, 고등학교 코드 12)를 2026-11-14에 대조.",
+ "categories": {
+  "basic": {
+   "annexNo": 3,
+   "curriculumKorean": "기본 교육과정"
+  },
+  "special-vocational": {
+   "annexNo": 2,
+   "curriculumKorean": "선택 중심 교육과정 특수교육 전문 교과",
+   "subjectGroupKorean": "직업·생활"
+  },
+  "ilyo": {
+   "annexNo": 2,
+   "curriculumKorean": "선택 중심 교육과정 특수교육 전문 교과",
+   "subjectGroupKorean": "이료",
+   "note": "이료 교과(군)는 시각장애학교에서 운영한다(총론 <표 8>)."
+  }
+ },
  "mappings": {
-  "바생": {
-   "id": "right-living",
-   "subjectKorean": "바른 생활",
-   "domainKorean": "통합교과 4개 영역 중첩"
+  "basic": {
+   "바생": {
+    "id": "right-living",
+    "subjectKorean": "바른 생활",
+    "domainKorean": "통합교과 4개 영역 중첩"
+   },
+   "슬생": {
+    "id": "wise-living",
+    "subjectKorean": "슬기로운 생활",
+    "domainKorean": "통합교과 4개 영역 중첩"
+   },
+   "건생": {
+    "id": "healthy-living",
+    "subjectKorean": "건강한 생활",
+    "domainKorean": "통합교과 4개 영역 중첩",
+    "note": "국가교육위원회 고시 제2026-2호(2026.1.21.)로 신설된 통합교과. 부칙에 따라 초등학교 1, 2학년은 2028년 3월 1일부터 시행한다."
+   },
+   "즐생": {
+    "id": "joyful-living",
+    "subjectKorean": "즐거운 생활",
+    "domainKorean": "통합교과 4개 영역 중첩",
+    "note": "국가교육위원회 고시 제2026-2호(2026.1.21.)로 개편된 성취기준(9개 → 6개, 신체활동 성취기준은 건강한 생활로 이동)이다. 초등학교 1, 2학년 시행일은 2028년 3월 1일이며, 그 전까지 학교 현장은 이전 고시(제2024-4호) 판 즐거운 생활 성취기준 9개를 따른다 — 이 9개도 edition \"2024-4\"로 함께 수록했다(previousEdition, get_learning_roadmap의 previousEdition)."
+   },
+   "국어": { "id": "korean", "subjectKorean": "국어" },
+   "사회": { "id": "social-studies", "subjectKorean": "사회" },
+   "수학": { "id": "mathematics", "subjectKorean": "수학" },
+   "과학": { "id": "science", "subjectKorean": "과학" },
+   "실과": { "id": "practical-arts", "subjectKorean": "실과" },
+   "진로": { "id": "career-vocation", "subjectKorean": "진로와 직업" },
+   "체육": { "id": "physical-education", "subjectKorean": "체육" },
+   "음악": { "id": "music", "subjectKorean": "음악" },
+   "미술": { "id": "art", "subjectKorean": "미술" },
+   "정통": { "id": "ict-utilization", "subjectKorean": "정보통신활용" },
+   "생영": { "id": "everyday-english", "subjectKorean": "생활영어" },
+   "보건": { "id": "health", "subjectKorean": "보건" }
   },
-  "슬생": {
-   "id": "wise-living",
-   "subjectKorean": "슬기로운 생활",
-   "domainKorean": "통합교과 4개 영역 중첩"
+  "special-vocational": {
+   "직준": { "id": "job-preparation", "subjectKorean": "직업준비" },
+   "안직": { "id": "stable-working-life", "subjectKorean": "안정된 직업생활" },
+   "작업I": { "id": "basic-work-skills-1", "subjectKorean": "기초작업기술Ⅰ" },
+   "작업II": { "id": "basic-work-skills-2", "subjectKorean": "기초작업기술Ⅱ" },
+   "정처": { "id": "information-processing", "subjectKorean": "정보처리" },
+   "농생": { "id": "agriculture-life-science", "subjectKorean": "농생명" },
+   "사무": { "id": "office-support", "subjectKorean": "사무지원" },
+   "대인": { "id": "personal-services", "subjectKorean": "대인서비스" },
+   "외식": { "id": "food-service", "subjectKorean": "외식서비스" },
+   "직실": { "id": "workplace-practicum", "subjectKorean": "직업현장실습" },
+   "직자": { "id": "work-and-independence", "subjectKorean": "직업과 자립" },
+   "사적": { "id": "social-adaptation", "subjectKorean": "사회적응" },
+   "시자": {
+    "id": "independent-living-for-the-blind",
+    "subjectKorean": "시각장애인 자립생활",
+    "bandCodes": ["12"],
+    "note": "고등학교 특수교육 전문 교과(직업·생활) 과목이다. 같은 이름의 공통 교육과정 과목(초·중학교, 【별책 2】)은 수록하지 않았다."
+   },
+   "농문": {
+    "id": "deaf-life-and-culture",
+    "subjectKorean": "농인의 생활과 문화",
+    "bandCodes": ["12"],
+    "note": "고등학교 특수교육 전문 교과(직업·생활) 과목이다. 같은 이름의 공통 교육과정 과목(초·중학교, 【별책 2】)은 수록하지 않았다."
+   }
   },
-  "건생": {
-   "id": "healthy-living",
-   "subjectKorean": "건강한 생활",
-   "domainKorean": "통합교과 4개 영역 중첩",
-   "note": "국가교육위원회 고시 제2026-2호(2026.1.21.)로 신설된 통합교과. 부칙에 따라 초등학교 1, 2학년은 2028년 3월 1일부터 시행한다."
+  "ilyo": {
+   "해부": { "id": "anatomy-physiology", "subjectKorean": "해부·생리" },
+   "병리": { "id": "pathology", "subjectKorean": "병리" },
+   "이보": { "id": "ilyo-health", "subjectKorean": "이료보건" },
+   "안마": { "id": "anma-massage-acupressure", "subjectKorean": "안마·마사지·지압" },
+   "전치": { "id": "electrotherapy", "subjectKorean": "전기치료" },
+   "한방": { "id": "korean-medicine", "subjectKorean": "한방" },
+   "침구": { "id": "acupuncture-moxibustion", "subjectKorean": "침구" },
+   "이임": { "id": "ilyo-clinical-practice", "subjectKorean": "이료임상" },
+   "진단": { "id": "diagnosis", "subjectKorean": "진단" },
+   "이실": { "id": "ilyo-practical-training", "subjectKorean": "이료실기실습" }
+  }
+ },
+ "outOfScope": [
+  {
+   "annexNo": 2,
+   "prefixes": ["국", "공국", "체", "미", "점자", "수어"],
+   "reason": "【별책 2】의 특수교육 공통 교육과정(국어(청각장애)·체육(시각장애)·체육(지체장애)·미술(시각장애)·점자·수어)과 선택 중심 공통 과목(공통국어(청각장애)) — 이 패키지의 수록 범위(특수교육 전문 교과) 밖이다."
   },
-  "즐생": {
-   "id": "joyful-living",
-   "subjectKorean": "즐거운 생활",
-   "domainKorean": "통합교과 4개 영역 중첩",
-   "note": "국가교육위원회 고시 제2026-2호(2026.1.21.)로 개편된 성취기준(9개 → 6개, 신체활동 성취기준은 건강한 생활로 이동)이다. 초등학교 1, 2학년 시행일은 2028년 3월 1일이며, 그 전까지 학교 현장은 이전 고시(제2024-4호) 판 즐거운 생활 성취기준 9개를 따른다 — 이 9개도 edition \"2024-4\"로 함께 수록했다(previousEdition, get_learning_roadmap의 previousEdition)."
-  },
-  "국어": { "id": "korean", "subjectKorean": "국어" },
-  "사회": { "id": "social-studies", "subjectKorean": "사회" },
-  "수학": { "id": "mathematics", "subjectKorean": "수학" },
-  "과학": { "id": "science", "subjectKorean": "과학" },
-  "실과": { "id": "practical-arts", "subjectKorean": "실과" },
-  "진로": { "id": "career-vocation", "subjectKorean": "진로와 직업" },
-  "체육": { "id": "physical-education", "subjectKorean": "체육" },
-  "음악": { "id": "music", "subjectKorean": "음악" },
-  "미술": { "id": "art", "subjectKorean": "미술" },
-  "정통": { "id": "ict-utilization", "subjectKorean": "정보통신활용" },
-  "생영": { "id": "everyday-english", "subjectKorean": "생활영어" },
-  "보건": { "id": "health", "subjectKorean": "보건" }
- }
+  {
+   "annexNo": 2,
+   "prefixes": ["시자", "농문"],
+   "bandCodes": ["6", "9"],
+   "reason": "【별책 2】 특수교육 공통 교육과정의 시각장애인 자립생활(초, 중)·농인의 생활과 문화(초, 중) — 같은 접두어의 고등학교(12) 코드만 특수교육 전문 교과다."
+  }
+ ]
 }

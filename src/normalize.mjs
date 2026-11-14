@@ -13,7 +13,15 @@ export function normalizeRoman(value) {
 const DASHES = /[‐‑–—−]/g;
 
 export function normalizeCode(code) {
-  const compact = normalizeRoman(String(code ?? '').normalize('NFC'))
+  return displayCode(normalizeRoman(String(code ?? '')));
+}
+
+/**
+ * 저장·표시용 코드 표기: 공백·대시 이형만 정리하고 로마 숫자는 원문대로 둔다
+ * (전문 교과 '[12작업Ⅰ01-01]'). 조회·비교는 normalizeCode·canonicalCode로 한다.
+ */
+export function displayCode(code) {
+  const compact = String(code ?? '').normalize('NFC')
     .replace(DASHES, '-')
     .replace(/\s+/g, '');
   if (!compact) return compact;
@@ -55,9 +63,10 @@ const BAND_BY_CODE = new Map(
 );
 
 // 성취기준 코드 패턴: [4국01-01] 형태(학년군 숫자 + 과목 약칭 + 영역 NN + 순번 NN).
-// 약칭 길이는 실측 전이므로 넉넉히 잡는다. 공백·대시 이형 허용.
+// 약칭은 한글 1~4자가 대부분이고, 전문 교과 '기초작업기술Ⅰ·Ⅱ'는 로마 숫자가 붙는다
+// ('[12작업Ⅰ01-01]' — 로마 숫자는 원문 그대로, ASCII 'I'로 적어도 받는다). 공백·대시 이형 허용.
 export const CODE_SOURCE =
-  '\\[\\s*(\\d{1,2})\\s*([가-힣A-Za-z]{1,8})\\s*(\\d{2})\\s*[-‐‑–—−]\\s*(\\d{2})\\s*\\]';
+  '\\[\\s*(\\d{1,2})\\s*([가-힣A-Za-zⅠ-Ⅻ]{1,8})\\s*(\\d{2})\\s*[-‐‑–—−]\\s*(\\d{2})\\s*\\]';
 
 export function parseBasicCode(code) {
   const m = new RegExp(`^${CODE_SOURCE}$`).exec(normalizeCode(code));

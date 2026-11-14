@@ -5,6 +5,44 @@ export { normalizeText };
 const MAX_LIMIT = 50;
 const BAND_ORDER = new Map(GRADE_BANDS.map((b) => [b.id, b.order]));
 
+// 카테고리(데이터 폴더): 기본 교육과정 → 특수교육 전문 교과 직업·생활 → 이료 순.
+export const CATEGORY_ORDER = ['basic', 'special-vocational', 'ilyo'];
+const categoryRank = (c) => (CATEGORY_ORDER.includes(c) ? CATEGORY_ORDER.indexOf(c) : CATEGORY_ORDER.length);
+const CATEGORY_ALIASES = [
+  [/^(?:basic|기본|기본교육과정)$/, ['basic']],
+  [/^(?:special-vocational|직업·생활|직업생활|직업)$/, ['special-vocational']],
+  [/^(?:ilyo|이료)$/, ['ilyo']],
+  [/^(?:(?:특수교육)?전문교과|선택중심(?:교육과정)?|special)$/, ['special-vocational', 'ilyo']],
+];
+
+/**
+ * 카테고리 입력 → 카테고리 id 배열. 'basic'·'기본 교육과정', 'special-vocational'·'직업·생활', 'ilyo'·'이료',
+ * '전문 교과'(직업·생활 + 이료)를 받는다. 이 설치본에 없는 카테고리는 뺀다. 못 풀면 null.
+ */
+export function resolveCategories(store, input) {
+  if (!input) return null;
+  const raw = normalizeText(input).replace(/\s+/g, '');
+  const hit = CATEGORY_ALIASES.find(([re]) => re.test(raw));
+  if (!hit) return null;
+  const list = hit[1].filter((c) => store.categories.includes(c));
+  return list.length ? list : null;
+}
+
+/** 카테고리 요약: 교육과정·교과(군)·과목 수·성취기준 수(최신 판). */
+export function categorySummary(store) {
+  return [...store.categories].sort((a, b) => categoryRank(a) - categoryRank(b)).map((category) => {
+    const subjects = store.subjects.filter((s) => s.category === category);
+    const first = subjects[0] ?? {};
+    return {
+      category,
+      ...(first.curriculumKorean ? { curriculumKorean: first.curriculumKorean } : {}),
+      ...(first.subjectGroupKorean ? { subjectGroupKorean: first.subjectGroupKorean } : {}),
+      subjects: subjects.length,
+      standards: subjects.reduce((n, s) => n + s.standardCount, 0),
+    };
+  });
+}
+
 export function levenshtein(a, b) {
   if (a === b) return 0;
   let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
@@ -55,6 +93,7 @@ export function byCurriculumOrder(a, b) {
 export function compactStandard(store, s) {
   return {
     code: s.code,
+    category: s.category,
     subjectKorean: s.subjectKorean,
     gradeBand: s.gradeBand,
     domainKorean: s.domainKorean,
@@ -74,7 +113,10 @@ function filterStandards(store, { subjectId, gradeBand, domain, category, editio
   let list = store.allStandards;
   if (editions === 'current') list = list.filter((s) => !s.edition);
   if (editions === 'previous') list = list.filter((s) => s.edition);
-  if (category) list = list.filter((s) => s.category === category);
+  if (category) {
+    const wanted = new Set([].concat(category));
+    list = list.filter((s) => wanted.has(s.category));
+  }
   if (subjectId) list = list.filter((s) => s.subjectId === subjectId);
   if (gradeBand) list = list.filter((s) => s.gradeBand === gradeBand);
   if (domain) {
@@ -139,23 +181,30 @@ export function buildRoadmap(store, { subjectId, gradeBand, editions = 'current'
   return { standardCount: list.length, gradeBands: bands };
 }
 
-/** 학년군 개요: 그 학년군에서 과목별 영역·성취기준 수. 개별화교육계획 범위 잡기에 쓴다. */
-export function gradeBandOverview(store, gradeBand) {
-  const list = filterStandards(store, { gradeBand, editions: 'current' });
+/**
+ * 학년군 개요: 그 학년군에서 과목별 영역·성취기준 수. 개별화교육계획 범위 잡기에 쓴다.
+ * 고1~3은 기본 교육과정 과목 뒤에 특수교육 전문 교과(직업·생활, 이료) 과목이 category와 함께 나온다.
+ */
+export function gradeBandOverview(store, gradeBand, { category } = {}) {
+  const list = filterStandards(store, { gradeBand, category, editions: 'current' });
   const bySubject = new Map();
   for (const s of list) {
     if (!bySubject.has(s.subjectId)) {
-      bySubject.set(s.subjectId, { subjectId: s.subjectId, subjectKorean: s.subjectKorean, standardCount: 0, domains: new Map() });
+      const meta = store.subjectsById?.get(s.subjectId);
+      bySubject.set(s.subjectId, {
+        subjectId: s.subjectId, subjectKorean: s.subjectKorean, category: s.category,
+        ...(meta?.subjectGroupKorean ? { subjectGroupKorean: meta.subjectGroupKorean } : {}),
+        standardCount: 0, domains: new Map(),
+      });
     }
     const entry = bySubject.get(s.subjectId);
     entry.standardCount += 1;
     entry.domains.set(s.domainNo, s.domainKorean);
   }
   return [...bySubject.values()]
-    .sort((a, b) => a.subjectId.localeCompare(b.subjectId, 'en'))
-    .map((e) => ({
-      subjectId: e.subjectId, subjectKorean: e.subjectKorean, standardCount: e.standardCount,
-      domains: [...e.domains.entries()].sort().map(([, name]) => name),
+    .sort((a, b) => categoryRank(a.category) - categoryRank(b.category) || a.subjectId.localeCompare(b.subjectId, 'en'))
+    .map(({ domains, ...e }) => ({
+      ...e, domains: [...domains.entries()].sort().map(([, name]) => name),
     }));
 }
 
@@ -214,6 +263,8 @@ export function contentSystemView(entry, { gradeBand, domain } = {}) {
       domainNo: d.domainNo,
       domainKorean: d.domainKorean,
       gradeBands: d.columns.map((c) => c.gradeBand),
+      // 이료 과목 표는 '내용 요소' 아래 열이 하위 영역이다 — 표의 열 순서(행의 subArea와 같은 이름).
+      ...(d.subAreas ? { subAreas: d.subAreas } : {}),
       coreIdeas: d.coreIdeas,
       contentElements: d.rows.map((r) => {
         const head = { category: r.category, ...(r.subArea ? { subArea: r.subArea } : {}) };
@@ -224,6 +275,70 @@ export function contentSystemView(entry, { gradeBand, domain } = {}) {
       }).filter((r) => (r.cells ?? r.items).length),
     })),
   };
+}
+
+// 과목 안내(성격·목표, 교수·학습 및 평가)의 부분 이름 → 데이터 필드.
+export const GUIDE_PARTS = new Map([
+  ['성격', 'nature'], ['목표', 'goals'], ['교수·학습', 'teachingLearning'], ['평가', 'assessment'],
+]);
+
+/** 과목 안내의 판 목록(최신 판 먼저). */
+export function guideEntries(store, subjectId) {
+  return (store.subjectGuides ?? [])
+    .filter((g) => g.subjectId === subjectId)
+    .sort((a, b) => (a.edition ? 1 : 0) - (b.edition ? 1 : 0));
+}
+
+/** 과목 안내 한 판 → 보기. part('성격'|'목표'|'교수·학습'|'평가')를 주면 그 부분만. */
+export function guideView(entry, part) {
+  const fields = part ? [GUIDE_PARTS.get(part)] : [...GUIDE_PARTS.values()];
+  return {
+    ...(entry.edition ? { edition: entry.edition, editionNote: entry.editionNote } : {}),
+    ...Object.fromEntries(fields.map((f) => [f, entry[f]])),
+  };
+}
+
+/** 안내 한 판 → 검색 단위 문단 목록(문서 순서). */
+function guideUnits(g) {
+  const out = [];
+  for (const sec of g.nature.sections) for (const text of sec.paragraphs) out.push({ part: '성격', heading: sec.heading, text });
+  for (const text of g.goals.overall) out.push({ part: '목표', heading: g.goals.heading, text });
+  for (const it of g.goals.items) out.push({ part: '목표', heading: g.goals.heading, no: it.no, text: it.text });
+  for (const [part, group] of [['교수·학습', g.teachingLearning], ['평가', g.assessment]]) {
+    for (const p of group.parts) {
+      for (const it of p.items) {
+        out.push({ part, heading: p.heading ?? group.heading, no: it.no, text: it.text, subItems: it.subItems ?? [] });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * 과목 안내 키워드 검색(최신 판). 문단·항목·하위 문단에서 NFC·부분 일치로 찾는다. 항목은 하위 문단이 맞아도
+ * 나오고, 맞은 하위 문단만 matchedSubItems로 붙인다. 순서: 카테고리 → 과목 id → 문서 순서.
+ */
+export function searchGuides(store, { query, subjectId, categories, part, limit = 20 } = {}) {
+  const cap = Math.min(limit, MAX_LIMIT);
+  const q = normalizeText(query);
+  const guides = (store.subjectGuides ?? [])
+    .filter((g) => !g.edition && (!subjectId || g.subjectId === subjectId) && (!categories || categories.includes(g.category)))
+    .sort((a, b) => categoryRank(a.category) - categoryRank(b.category) || a.subjectId.localeCompare(b.subjectId, 'en'));
+  const hits = [];
+  for (const g of guides) {
+    for (const u of guideUnits(g)) {
+      if (part && u.part !== part) continue;
+      const inText = normalizeText(u.text).includes(q);
+      const subs = (u.subItems ?? []).filter((t) => normalizeText(t).includes(q));
+      if (!inText && !subs.length) continue;
+      hits.push({
+        subjectId: g.subjectId, subjectKorean: g.subjectKorean, category: g.category,
+        part: u.part, heading: u.heading, ...(u.no ? { no: u.no } : {}), text: u.text,
+        ...(subs.length ? { matchedSubItems: subs } : {}),
+      });
+    }
+  }
+  return { total: hits.length, results: hits.slice(0, cap) };
 }
 
 /** 조항 수: 세부 항목(가)·(1))까지 센다. */

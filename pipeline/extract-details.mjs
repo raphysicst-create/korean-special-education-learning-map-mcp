@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 【별책 3】 기본 교육과정의 '가. 내용 체계'(핵심 아이디어·내용 요소 표)와 '나. 성취기준'의
+// 【별책 3】 기본 교육과정과 【별책 2】 특수교육 전문 교과의 '가. 내용 체계'(핵심 아이디어·내용 요소 표)와 '나. 성취기준'의
 // 영역 안내·성취기준 해설·성취기준 적용 시 고려 사항을 HWP에서 추출한다.
 //   npm run pipeline:details [-- --record-gates]
 //
@@ -10,9 +10,10 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { canonicalCode, normalizeCode, resolveGradeBand } from '../src/normalize.mjs';
+import { canonicalCode, normalizeCode, normalizeRoman, parseBasicCode, resolveGradeBand } from '../src/normalize.mjs';
 import { normalizeWhitespace, stripPageFurniture } from './extract-standards.mjs';
 import { hwpBlocks } from './hwp-text.mjs';
+import { annexCategories, loadSubjectConfig, mergedMappings, routeCode } from './scope.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..');
@@ -112,12 +113,16 @@ const BAND_HEADING = /^\[\s*(초등학교|중학교|고등학교)\s*(\d)\s*[~∼
 const SUBAREA_HEADING = /^([①-⑨])\s*(\S.{0,30})$/;
 const PART_GA = /^\(가\)\s*성취기준\s*해설$/;
 const PART_NA = /^\(나\)\s*성취기준\s*적용\s*시\s*고려\s*사항$/;
-const CODE_ONE = '\\[\\s*\\d{1,2}\\s*[가-힣]{2}\\s*\\d{2}\\s*[-‐‑–—−]\\s*\\d{2}\\s*\\]';
+// 접두어는 한글 1~4자, 전문 교과 '작업Ⅰ'·'작업Ⅱ'는 로마 숫자가 붙는다.
+const PREFIX = '[가-힣A-Za-zⅠ-Ⅻ]{1,8}';
+const CODE_ONE = `\\[\\s*\\d{1,2}\\s*${PREFIX}\\s*\\d{2}\\s*[-‐‑–—−]\\s*\\d{2}\\s*\\]`;
 // 문단 첫머리 코드는 학년군 숫자가 빠진 오기('[수학01-12]')까지 잡아서 예외표로만 풀어 준다 — 조용히
 // 코드 없는 문단(묶음 전체)으로 넘어가지 않게.
-const CODE_LOOSE = '\\[\\s*\\d{0,2}\\s*[가-힣]{2}\\s*\\d{2}\\s*[-‐‑–—−]\\s*\\d{2}\\s*\\]';
+const CODE_LOOSE = `\\[\\s*\\d{0,2}\\s*${PREFIX}\\s*\\d{2}\\s*[-‐‑–—−]\\s*\\d{2}\\s*\\]`;
 const CODE_LEAD = new RegExp(`^(${CODE_LOOSE}(?:\\s*,\\s*${CODE_LOOSE})*)\\s*`);
 const BOX_LINE = new RegExp(`^(${CODE_ONE})\\s*(.+)$`);
+// 수록 범위 판정용 — 코드 꼴이 다른 범위 밖 과목('[10공국1-01-01]')도 학년군·접두어만은 읽는다.
+const BOX_HEAD = /^\[\s*(\d{1,2})\s*([가-힣A-Za-zⅠ-Ⅻ]+)/;
 
 // 2026-2호 통합교과(건강한 생활·즐거운 생활)는 성취기준마다 해설·고려 사항을 소제목으로 나눈다.
 export const EXPLANATION_LABELS = ['성취기준의 설정 취지 및 의미', '교수·학습의 주안점'];
@@ -148,7 +153,9 @@ export function findSubjectSections(blocks) {
     if (!SECTION_A.test(text(blocks[k]))) continue;
     const b = blocks.findIndex((p, j) => j > k && SECTION_B.test(text(p)));
     if (b < 0) throw new Error(`'가. 내용 체계'(${k}) 뒤에 '나. 성취기준'이 없습니다.`);
-    const end = blocks.findIndex((p, j) => j > b && (SECTION_END_PARA.test(text(p))
+    // 별책 2 공통국어(청각장애)1·2처럼 두 과목이 1절·3절을 함께 쓰면 '3. 교수·학습' 전에 다음
+    // '가. 내용 체계'가 나온다 — 그 앞에서 끊는다.
+    const end = blocks.findIndex((p, j) => j > b && (SECTION_END_PARA.test(text(p)) || SECTION_A.test(text(p))
       || p.ctrls.some((c) => c.id !== 'tbl ' && c.texts?.some((t) => SECTION_END_BOX.test(cleanText(t))))));
     if (end < 0) throw new Error(`'나. 성취기준'(${b}) 뒤에 '3. 교수·학습 및 평가'가 없습니다.`);
     const next = out.at(-1);
@@ -158,20 +165,33 @@ export function findSubjectSections(blocks) {
   return out;
 }
 
-/** 절 안 성취기준 목록 상자(1x1 표)의 코드 접두어 → 과목 접두어 하나. */
-function sectionPrefix(blocks, { b, end }) {
-  const prefixes = new Set();
+/**
+ * 절 안 성취기준 목록 상자(1x1 표)의 코드 → 수록 판정 하나. route({ prefix, bandCode })는
+ * { category, map } | { outOfScope } | null(대응표에 없음)을 돌려준다. 절 안 판정이 하나로 모이지 않으면 실패.
+ */
+export function classifySection(blocks, { b, end }, route) {
+  const verdicts = new Map();
   for (let k = b; k < end; k += 1) {
     for (const c of blocks[k].ctrls) {
       if (c.id !== 'tbl ' || c.rows !== 1 || c.cols !== 1) continue;
       for (const p of cellParas(c.cells[0])) {
-        const m = BOX_LINE.exec(p);
-        if (m) prefixes.add(normalizeCode(m[1]).replace(/^\[\d+/, '').slice(0, 2));
+        const m = BOX_HEAD.exec(p);
+        if (!m) continue;
+        const hit = route({ prefix: normalizeRoman(m[2]), bandCode: m[1] });
+        const key = !hit ? `unmapped:${normalizeRoman(m[2])}(${m[1]})` : hit.outOfScope ? 'out-of-scope' : `${hit.category}:${hit.map.id}`;
+        verdicts.set(key, hit);
       }
     }
   }
-  if (prefixes.size !== 1) throw new Error(`절(${b}~${end})의 성취기준 접두어가 하나가 아닙니다: ${[...prefixes].join(',')}`);
-  return [...prefixes][0];
+  if (verdicts.size !== 1) throw new Error(`절(${b}~${end})의 성취기준 상자 판정이 하나가 아닙니다: ${[...verdicts.keys()].join(', ') || '(코드 없음)'}`);
+  const [[key, hit]] = [...verdicts];
+  if (!hit) throw new Error(`대응표에 없는 접두어 — ${key.replace(/^unmapped:/, '')}`);
+  return hit;
+}
+
+/** 평면 대응표(접두어 → 과목)를 route 함수로 — 카테고리 하나짜리 시험·도구용. */
+export function routeFromMappings(mappings, category = 'basic') {
+  return ({ prefix }) => (mappings[prefix] ? { category, map: mappings[prefix] } : null);
 }
 
 function grid(table) {
@@ -243,7 +263,40 @@ export function parseContentTable(table, ctx) {
     columns.push({ col: c, label });
   }
   let keep = columns;
-  if (ctx.columnSubject) {
+  // 학년군 머리 행이 없는 한 열 표(전문 교과 — 과목이 고등학교 한 학년군뿐이다).
+  const unlabeled = columns.length === 1 && !columns[0].label && content.row + 1 === firstCatRow;
+  // 이료 과목 표: '내용 요소' 아래 열 머리가 학년군이 아니라 하위 영역('해부학의 이해' 등)이다.
+  // 범주 × 하위 영역마다 행 하나(subArea)로 펴고, 열은 과목 학년군 하나로 둔다.
+  // 학년군 열 머리는 '초등학교 1~2학년'처럼 학교·학년을 적는다(resolveGradeBand는 '중추신경계통'도
+  // 중학교로 읽을 만큼 너그러우므로 판정에 쓰지 않는다).
+  const subAreaColumns = !unlabeled && !ctx.columnSubject && ctx.bands.length === 1 && columns.length > 1
+    && columns.every((c) => c.label && !/학교|학년/.test(c.label));
+  if (subAreaColumns) {
+    if (new Set(columns.map((c) => c.label)).size !== columns.length) throw new Error(`${where}: 하위 영역 열 머리가 겹칩니다(${columns.map((c) => c.label).join(',')}).`);
+    const rows = [];
+    for (let r = firstCatRow; r < table.rows; r += 1) {
+      const labels = [];
+      for (let c = 0; c < valueStart; c += 1) if (g[r][c] && !labels.includes(g[r][c])) labels.push(g[r][c]);
+      if (labels.length !== 1 || !isCategory(labels[0])) throw new Error(`${where}: ${r}행 머리 칸이 범주 하나가 아닙니다.`);
+      for (const col of columns) {
+        const cell = g[r][col.col];
+        if (!cell) continue;
+        if (cell.rowSpan > 1 || cell.colSpan > 1) throw new Error(`${where}: 하위 영역 표의 병합 칸(r${cell.row}c${cell.col}).`);
+        const items = cellItems(cell, `${where} ${r}행 ${col.label}`);
+        if (items.length) rows.push({ category: cleanText(labelText(labels[0])).replace(/\s+/g, ''), subArea: col.label, cells: [{ gradeBands: [...ctx.bands], items }] });
+      }
+    }
+    return {
+      coreIdeas: cellItems(coreValue, `${where} 핵심 아이디어`),
+      columns: [{ gradeBand: ctx.bands[0], label: null }],
+      subAreas: columns.map((c) => c.label),
+      rows,
+    };
+  }
+  if (unlabeled) {
+    if (ctx.bands.length !== 1) throw new Error(`${where}: 학년군 머리 없는 표인데 과목 학년군이 ${ctx.bands.length}개입니다.`);
+    keep = [{ ...columns[0], label: null, gradeBand: ctx.bands[0] }];
+  } else if (ctx.columnSubject) {
     keep = columns.filter((c) => c.label.replace(/\s+/g, '') === ctx.columnSubject.replace(/\s+/g, ''));
     if (keep.length !== 1) throw new Error(`${where}: 과목 열 '${ctx.columnSubject}'을(를) 찾지 못했습니다(열: ${columns.map((c) => c.label).join(', ')}).`);
     keep = [{ ...keep[0], gradeBand: ctx.bands[0] }];
@@ -472,7 +525,20 @@ export function parseSubject(blocks, section, ctx) {
 }
 
 /** 추출 결과를 출시 성취기준과 맞춰 본다 — 영역 이름·번호, 상자 코드 전량·1회, 통합교과 표의 성취기준 열. */
-export function checkAgainstStandards(subjectId, parsed, standards, where) {
+/**
+ * 내용 체계 영역 이름이 성취기준 영역 이름과 같은가. 원문이 두 절에서 다르게 적은 영역은
+ * details-exceptions.json domainNames(키 '과목 id|영역 번호')에 두 표기가 정확히 있어야 한다.
+ */
+export function domainNameMatches(subjectId, domainNo, contentName, standardsName, domainNames = {}, used = null) {
+  const squashed = (v) => normalizeWhitespace(String(v ?? '')).replace(/\s+/g, '');
+  if (squashed(contentName) === squashed(standardsName)) return true;
+  const key = `${subjectId}|${domainNo}`;
+  const fix = domainNames[key];
+  if (fix && fix.contentSystem === contentName && fix.standards === standardsName) { used?.add(key); return true; }
+  return false;
+}
+
+export function checkAgainstStandards(subjectId, parsed, standards, where, domainNames = {}, usedDomainNames = null) {
   const errors = [];
   const byCode = new Map(standards.map((s) => [canonicalCode(s.code), s]));
   const domains = new Map(standards.map((s) => [s.domainNo, s.domainKorean]));
@@ -480,7 +546,7 @@ export function checkAgainstStandards(subjectId, parsed, standards, where) {
   const csDomains = parsed.contentSystem.domains;
   for (const d of csDomains) {
     if (!domains.has(d.domainNo)) errors.push(`${where}: 내용 체계 영역 ${d.domainNo} ${d.domainKorean}이(가) 성취기준에 없습니다.`);
-    else if (!sameName(domains.get(d.domainNo), d.domainKorean)) errors.push(`${where}: 영역 ${d.domainNo} 이름 불일치 — 내용 체계 '${d.domainKorean}', 성취기준 '${domains.get(d.domainNo)}'`);
+    else if (!domainNameMatches(subjectId, d.domainNo, d.domainKorean, domains.get(d.domainNo), domainNames, usedDomainNames)) errors.push(`${where}: 영역 ${d.domainNo} 이름 불일치 — 내용 체계 '${d.domainKorean}', 성취기준 '${domains.get(d.domainNo)}' (원문 표기 차이라면 details-exceptions.json domainNames에 근거와 함께 적으세요)`);
     if (d.standardCodes) {
       const want = standards.map((s) => canonicalCode(s.code)).sort().join(',');
       const got = d.standardCodes.map(canonicalCode).sort().join(',');
@@ -488,6 +554,14 @@ export function checkAgainstStandards(subjectId, parsed, standards, where) {
     }
   }
   for (const no of domains.keys()) if (!csDomains.some((d) => d.domainNo === no)) errors.push(`${where}: 영역 ${no}의 내용 체계 표가 없습니다.`);
+  // 하위 영역 열 표(이료)는 열 머리 수·순서가 해설 절의 하위 영역 머리글(①, ② …)과 맞아야 한다. 이름은
+  // 원문이 두 곳에서 조금씩 다르게 적은 곳이 있어(이료보건 '보건 통계의 기초'/'보건 통계의 이해' 등 6개 영역)
+  // 각 표기를 원문대로 두고 notices로만 알린다.
+  for (const d of csDomains.filter((x) => x.subAreas)) {
+    const names = parsed.notes.sections.filter((s) => s.domainNo === d.domainNo).flatMap((s) => s.groups.map((g) => g.subArea?.name ?? ''));
+    if (names.length !== d.subAreas.length || names.some((n) => !n)) errors.push(`${where}: 영역 ${d.domainNo} 하위 영역 수 — 내용 체계 ${d.subAreas.length}개(${d.subAreas.join(', ')}), 해설 ${names.length}개(${names.join(', ')})`);
+    else if (!sameName(names.join('|'), d.subAreas.join('|'))) parsed.notices?.push(`${where} 영역 ${d.domainNo}: 하위 영역 표기 차이(원문대로 둠) — 내용 체계 '${d.subAreas.join(', ')}' / 해설 '${names.join(', ')}'`);
+  }
   const seen = new Map();
   for (const sec of parsed.notes.sections) {
     if (!sameName(domains.get(sec.domainNo) ?? '', sec.domainKorean)) errors.push(`${where}: 해설 절 영역 '${sec.domainKorean}'이(가) 성취기준 영역 '${domains.get(sec.domainNo)}'과 다릅니다.`);
@@ -508,13 +582,24 @@ export function checkAgainstStandards(subjectId, parsed, standards, where) {
 }
 
 /** PDF(-layout·-raw) 글자 대조: 추출한 모든 문장·항목이 공백을 빼고 PDF 어딘가에 그대로 있어야 한다. */
-export function crossCheckDetails(subjects, pdfLayout, pdfRaw) {
-  const prep = (s) => normalizeWhitespace(stripPageFurniture(s)).replace(PDF_SYMBOL_ARTIFACTS, '').replace(/\s+/g, '');
+/**
+ * PDF(-layout·-raw) 글자 대조기: (text) → 공백·가운뎃점을 빼고 PDF 어딘가에 그대로 있으면 true.
+ * 가운뎃점은 HWP에 보통 글자로 있어도 PDF가 기호 글꼴('ž')로 내보내는 곳이 있어(미술 '교수·학습') 양쪽에서 뺀다.
+ */
+export function pdfChecker(pdfLayout, pdfRaw) {
+  const prep = (s) => normalizeWhitespace(stripPageFurniture(s)).replace(PDF_SYMBOL_ARTIFACTS, '').replace(/[\s·]+/g, '');
   const hay = [prep(pdfLayout), prep(pdfRaw)];
+  return (text) => {
+    const needle = pdfForm(text).replace(/[\s·]+/g, '');
+    return !needle || hay.some((h) => h.includes(needle));
+  };
+}
+
+export function crossCheckDetails(subjects, pdfLayout, pdfRaw) {
+  const inPdf = pdfChecker(pdfLayout, pdfRaw);
   const missing = [];
   const check = (label, text) => {
-    const needle = pdfForm(text).replace(/\s+/g, '');
-    if (needle && !hay.some((h) => h.includes(needle))) missing.push(`${label}: ${text.slice(0, 60)}`);
+    if (!inPdf(text)) missing.push(`${label}: ${text.slice(0, 60)}`);
   };
   for (const s of subjects) {
     const w = s.subjectKorean;
@@ -623,14 +708,19 @@ function pdftotext(path, mode) {
   return execFileSync('pdftotext', ['-enc', 'UTF-8', mode, path, '-'], { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 });
 }
 
-/** 한 판의 HWP 전체 → 과목별 추출 결과. */
-export function extractEdition({ blocks, mappings, subjectsById, standards, texts, edition, combinedIntegrated, codeLeads = {}, usedCodeLeads = new Set(), verticalLabels = {}, usedVerticalLabels = new Set() }) {
+/**
+ * 한 판의 HWP 전체 → 과목별 추출 결과. route는 classifySection 참고(없으면 mappings로 basic 하나).
+ * 범위 밖(outOfScope)으로 밝힌 과목 절은 건너뛰고 skipped로 센다.
+ */
+export function extractEdition({ blocks, mappings, route = routeFromMappings(mappings), subjectsById, standards, texts, edition, combinedIntegrated, codeLeads = {}, usedCodeLeads = new Set(), verticalLabels = {}, usedVerticalLabels = new Set(), domainNames = {}, usedDomainNames = new Set() }) {
   const out = [];
   const errors = [];
+  const notices = [];
+  let skipped = 0;
   for (const section of findSubjectSections(blocks)) {
-    const prefix = sectionPrefix(blocks, section);
-    const map = mappings[prefix];
-    if (!map) throw new Error(`대응표에 없는 접두어 '${prefix}'`);
+    const hit = classifySection(blocks, section, route);
+    if (hit.outOfScope) { skipped += 1; continue; }
+    const { map, category } = hit;
     const subject = subjectsById.get(map.id);
     const mine = standards.filter((s) => s.subjectId === map.id && (s.edition ?? null) === (edition ?? null));
     const bands = subject?.gradeBands ?? [...new Set(mine.map((s) => s.gradeBand))];
@@ -643,34 +733,26 @@ export function extractEdition({ blocks, mappings, subjectsById, standards, text
     };
     const parsed = parseSubject(blocks, section, ctx);
     const where = `${map.subjectKorean}${edition ? `(${edition})` : ''}`;
-    errors.push(...checkAgainstStandards(map.id, parsed, mine, where));
-    out.push({ subjectId: map.id, subjectKorean: map.subjectKorean, ...parsed });
+    errors.push(...checkAgainstStandards(map.id, { ...parsed, notices }, mine, where, domainNames, usedDomainNames));
+    if (out.some((s) => s.subjectId === map.id)) errors.push(`${where}: 과목 절이 두 번 나왔습니다.`);
+    out.push({ subjectId: map.id, subjectKorean: map.subjectKorean, category, ...parsed });
   }
-  return { subjects: out, errors };
+  return { subjects: out, errors, skipped, notices };
 }
 
 function main() {
   const recordGates = process.argv.includes('--record-gates');
   const sources = JSON.parse(readFileSync(join(here, 'sources.json'), 'utf8'));
   const paths = JSON.parse(readFileSync(join(repoRoot, '.cache', 'pdf-paths.json'), 'utf8'));
-  const { mappings } = JSON.parse(readFileSync(join(here, 'subjects.json'), 'utf8'));
-  const { codeLeads, verticalLabels } = JSON.parse(readFileSync(join(here, 'details-exceptions.json'), 'utf8'));
+  const config = loadSubjectConfig();
+  const { codeLeads, verticalLabels, domainNames = {} } = JSON.parse(readFileSync(join(here, 'details-exceptions.json'), 'utf8'));
   const usedCodeLeads = new Set();
   const usedVerticalLabels = new Set();
-  const exceptions = { codeLeads, usedCodeLeads, verticalLabels, usedVerticalLabels };
+  const usedDomainNames = new Set();
+  const exceptions = { codeLeads, usedCodeLeads, verticalLabels, usedVerticalLabels, domainNames, usedDomainNames };
   const dataDir = join(repoRoot, 'data', 'kr');
   const { subjects } = JSON.parse(readFileSync(join(dataDir, 'subjects.json'), 'utf8'));
-  const { standards } = JSON.parse(readFileSync(join(dataDir, 'basic', 'curriculum-standards.json'), 'utf8'));
-  const texts = new Map(JSON.parse(readFileSync(join(dataDir, 'basic', 'standard-texts.json'), 'utf8')).texts.map((t) => [t.key, t.text]));
   const subjectsById = new Map(subjects.map((s) => [s.id, s]));
-
-  const src = sources.annexes.find((a) => a.role === 'details');
-  const prevSrc = sources.annexes.find((a) => a.role === 'details-previous');
-  const pdfSrc = sources.annexes.find((a) => a.role === 'standards');
-  const prevPdfSrc = sources.annexes.find((a) => a.role === 'standards-previous');
-  for (const s of [src, pdfSrc, prevSrc, prevPdfSrc].filter(Boolean)) {
-    if (!paths[s.id]) throw new Error(`${s.id} 파일 경로가 없습니다 — pipeline:fetch를 먼저 실행하세요.`);
-  }
 
   const fail = (title, list) => {
     if (!list.length) return;
@@ -678,73 +760,115 @@ function main() {
     for (const m of list.slice(0, 40)) console.error(`  - ${m}`);
     process.exit(1);
   };
+  const gatesDetails = {};
 
-  const blocks = hwpBlocks(readFileSync(paths[src.id]));
-  const cur = extractEdition({ blocks, mappings, subjectsById, standards, texts, ...exceptions });
-  fail('성취기준 대조 실패', cur.errors);
-  if (cur.subjects.length !== subjects.length) fail('과목 수 불일치', [`HWP ${cur.subjects.length}과목, 출시 ${subjects.length}과목`]);
-  fail('PDF 대조 실패(최신 판)', crossCheckDetails(cur.subjects, pdftotext(paths[pdfSrc.id], '-layout'), pdftotext(paths[pdfSrc.id], '-raw')));
+  for (const src of sources.annexes.filter((a) => a.role === 'details')) {
+    const sameAnnex = (role) => sources.annexes.find((a) => a.role === role && a.annexNo === src.annexNo);
+    const prevSrc = sameAnnex('details-previous');
+    const pdfSrc = sameAnnex('standards');
+    const prevPdfSrc = sameAnnex('standards-previous');
+    for (const s of [src, pdfSrc, prevSrc, prevPdfSrc].filter(Boolean)) {
+      if (!paths[s.id]) throw new Error(`${s.id} 파일 경로가 없습니다 — pipeline:fetch를 먼저 실행하세요.`);
+    }
+    const categories = annexCategories(src);
+    const route = (c) => routeCode(c, src, config);
+    const standards = [];
+    const texts = new Map();
+    for (const category of categories) {
+      standards.push(...JSON.parse(readFileSync(join(dataDir, category, 'curriculum-standards.json'), 'utf8')).standards);
+      for (const t of JSON.parse(readFileSync(join(dataDir, category, 'standard-texts.json'), 'utf8')).texts) texts.set(t.key, t.text);
+    }
+    const mine = subjects.filter((s) => categories.includes(s.category));
+    const mapsById = new Map(mine.map((s) => [s.id, s]));
+    const label = `【별책 ${src.annexNo}】`;
 
-  let prevSubjects = [];
-  if (prevSrc) {
-    // 이전 판 성취기준이 따로 있는 과목(standards-previous include)과 내용 체계·해설이 다른 과목(details-previous
-    // include)은 다를 수 있다 — 2026-2호는 바른 생활·슬기로운 생활의 성취기준은 그대로 두고 해설 문구만 다듬었다.
-    const prefixOf = (code) => normalizeCode(code).replace(/^\[\d+/, '').slice(0, 2);
-    const stdInclude = new Set(prevPdfSrc?.include?.prefixes ?? []);
-    const include = new Set(prevSrc.include?.prefixes ?? []);
-    const notListed = [...stdInclude].filter((p) => !include.has(p));
-    fail('이전 판 설정 오류', notListed.map((p) => `성취기준 이전 판 과목 '${p}'이(가) details-previous include에 없습니다.`));
-    const currentOnly = new Set(prevPdfSrc?.currentOnly?.prefixes ?? []);
-    const idsOf = (set) => new Set([...set].map((p) => mappings[p].id));
-    const prevBlocks = hwpBlocks(readFileSync(paths[prevSrc.id]));
-    // 비교를 위해 이전 판 전 과목을 뽑는다. 이전 판 성취기준은 stdInclude 과목만 따로 있고, 나머지는 최신 판과 같다.
-    const prevStandards = standards.filter((s) => s.edition === prevSrc.edition
-      || (!s.edition && !stdInclude.has(prefixOf(s.code)) && !currentOnly.has(prefixOf(s.code))));
-    const asPrev = prevStandards.map((s) => (s.edition ? s : { ...s, edition: prevSrc.edition }));
-    const all = extractEdition({
-      blocks: prevBlocks, mappings, subjectsById, standards: asPrev, texts, edition: prevSrc.edition, combinedIntegrated: true, ...exceptions,
-    });
-    fail('성취기준 대조 실패(이전 판)', all.errors);
-    fail('판본 비교 실패', compareEditions(cur.subjects, all.subjects, { includeIds: idsOf(include), currentOnlyIds: idsOf(currentOnly) }));
-    prevSubjects = all.subjects.filter((s) => idsOf(include).has(s.subjectId));
-    if (prevSubjects.length !== include.size) fail('이전 판 과목 누락', [`include ${include.size}과목 중 ${prevSubjects.length}과목만 이전 판 HWP에서 찾았습니다.`]);
-    // include 과목은 실제로 달라야 한다 — 같은데 include에 두면 같은 내용을 두 번 싣게 된다.
-    const curById = new Map(cur.subjects.map((s) => [s.subjectId, s]));
-    const same = prevSubjects.filter((p) => curById.has(p.subjectId)
-      && JSON.stringify(flattenDetails(p)) === JSON.stringify(flattenDetails(curById.get(p.subjectId))));
-    fail('이전 판 설정 오류', same.map((s) => `${s.subjectKorean}: 두 판의 내용 체계·해설이 같은데 include에 있습니다.`));
-    fail('PDF 대조 실패(이전 판)', crossCheckDetails(prevSubjects, pdftotext(paths[prevPdfSrc.id], '-layout'), pdftotext(paths[prevPdfSrc.id], '-raw')));
-    prevSubjects = prevSubjects.map((s) => ({ ...s, edition: prevSrc.edition, editionNote: prevSrc.editionNote, sourceId: prevSrc.id }));
+    const blocks = hwpBlocks(readFileSync(paths[src.id]));
+    const cur = extractEdition({ blocks, route, subjectsById, standards, texts, ...exceptions });
+    fail(`${label} 성취기준 대조 실패`, cur.errors);
+    if (cur.subjects.length !== mine.length) {
+      const got = new Set(cur.subjects.map((s) => s.subjectId));
+      fail(`${label} 과목 수 불일치`, [`HWP ${cur.subjects.length}과목, 출시 ${mine.length}과목 — HWP에 없는 과목: ${mine.filter((s) => !got.has(s.id)).map((s) => s.subjectKorean).join(', ')}`]);
+    }
+    fail(`${label} PDF 대조 실패(최신 판)`, crossCheckDetails(cur.subjects, pdftotext(paths[pdfSrc.id], '-layout'), pdftotext(paths[pdfSrc.id], '-raw')));
+
+    let prevSubjects = [];
+    if (prevSrc) {
+      // 이전 판 성취기준이 따로 있는 과목(standards-previous include)과 내용 체계·해설이 다른 과목(details-previous
+      // include)은 다를 수 있다 — 2026-2호는 바른 생활·슬기로운 생활의 성취기준은 그대로 두고 해설 문구만 다듬었다.
+      const prefixOf = (code) => parseBasicCode(code).prefix;
+      const stdInclude = new Set(prevPdfSrc?.include?.prefixes ?? []);
+      const include = new Set(prevSrc.include?.prefixes ?? []);
+      const notListed = [...stdInclude].filter((p) => !include.has(p));
+      fail('이전 판 설정 오류', notListed.map((p) => `성취기준 이전 판 과목 '${p}'이(가) details-previous include에 없습니다.`));
+      const currentOnly = new Set(prevPdfSrc?.currentOnly?.prefixes ?? []);
+      const merged = mergedMappings(categories, config);
+      const idsOf = (set) => new Set([...set].map((p) => {
+        if (!merged[p]) throw new Error(`${prevSrc.id}: 대응표에 없는 접두어 ${p}`);
+        return merged[p].id;
+      }));
+      const prevBlocks = hwpBlocks(readFileSync(paths[prevSrc.id]));
+      // 비교를 위해 이전 판 전 과목을 뽑는다. 이전 판 성취기준은 stdInclude 과목만 따로 있고, 나머지는 최신 판과 같다.
+      const prevStandards = standards.filter((s) => s.edition === prevSrc.edition
+        || (!s.edition && !stdInclude.has(prefixOf(s.code)) && !currentOnly.has(prefixOf(s.code))));
+      const asPrev = prevStandards.map((s) => (s.edition ? s : { ...s, edition: prevSrc.edition }));
+      const all = extractEdition({
+        blocks: prevBlocks, route: (c) => routeCode(c, prevSrc, config), subjectsById, standards: asPrev, texts,
+        edition: prevSrc.edition, combinedIntegrated: true, ...exceptions,
+      });
+      fail(`${label} 성취기준 대조 실패(이전 판)`, all.errors);
+      fail(`${label} 판본 비교 실패`, compareEditions(cur.subjects, all.subjects, { includeIds: idsOf(include), currentOnlyIds: idsOf(currentOnly) }));
+      prevSubjects = all.subjects.filter((s) => idsOf(include).has(s.subjectId));
+      if (prevSubjects.length !== include.size) fail('이전 판 과목 누락', [`include ${include.size}과목 중 ${prevSubjects.length}과목만 이전 판 HWP에서 찾았습니다.`]);
+      // include 과목은 실제로 달라야 한다 — 같은데 include에 두면 같은 내용을 두 번 싣게 된다.
+      const curById = new Map(cur.subjects.map((s) => [s.subjectId, s]));
+      const same = prevSubjects.filter((p) => curById.has(p.subjectId)
+        && JSON.stringify(flattenDetails(p)) === JSON.stringify(flattenDetails(curById.get(p.subjectId))));
+      fail('이전 판 설정 오류', same.map((s) => `${s.subjectKorean}: 두 판의 내용 체계·해설이 같은데 include에 있습니다.`));
+      if (prevSubjects.length) {
+        fail(`${label} PDF 대조 실패(이전 판)`, crossCheckDetails(prevSubjects, pdftotext(paths[prevPdfSrc.id], '-layout'), pdftotext(paths[prevPdfSrc.id], '-raw')));
+      }
+      prevSubjects = prevSubjects.map((s) => ({ ...s, edition: prevSrc.edition, editionNote: prevSrc.editionNote, sourceId: prevSrc.id }));
+      console.error(`✓ ${prevSrc.id}: 두 판 비교 통과 — 이전 판 함께 수록 ${prevSubjects.map((s) => s.subjectKorean).join(', ') || '없음'}, 나머지 ${cur.subjects.length - prevSubjects.length}과목은 두 판이 같음`);
+    }
+
+    const all = [...cur.subjects.map((s) => ({ ...s, sourceId: src.id })), ...prevSubjects];
+    const order = (a, b) => a.subjectId.localeCompare(b.subjectId, 'en') || (a.edition ? 1 : 0) - (b.edition ? 1 : 0);
+    const head = (s) => ({ subjectId: s.subjectId, subjectKorean: s.subjectKorean, sourceId: s.sourceId, ...(s.edition ? { edition: s.edition, editionNote: s.editionNote } : {}) });
+    for (const category of categories) {
+      const info = config.categories[category];
+      const list = all.filter((s) => mapsById.get(s.subjectId)?.category === category).sort(order);
+      const sourceNote = `${src.notice} ${label} ${src.titleKorean}${info.subjectGroupKorean ? ` 중 특수교육 전문 교과(${info.subjectGroupKorean})` : ''} HWP에서 추출하고 같은 고시의 PDF와 글자 대조한 원문. 저작권법 제7조에 따라 보호받지 않는 고시 원문이며 정확성·추적성을 위해 출처를 표기한다.`;
+      const contentSystems = {
+        version: 'kr-special-content-systems-v1', category, sourceNote,
+        subjects: list.map((s) => ({
+          ...head(s),
+          intro: s.contentSystem.intro,
+          domains: s.contentSystem.domains.map(({ standardCodes, ...d }) => d),
+        })),
+      };
+      const standardNotes = {
+        version: 'kr-special-standard-notes-v1', category, sourceNote,
+        subjects: list.map((s) => ({ ...head(s), intro: s.notes.intro, sections: s.notes.sections })),
+      };
+      writeFileSync(join(dataDir, category, 'content-systems.json'), `${JSON.stringify(contentSystems, null, 1)}\n`);
+      writeFileSync(join(dataDir, category, 'standard-notes.json'), `${JSON.stringify(standardNotes, null, 1)}\n`);
+      const counts = detailCounts(list);
+      gatesDetails[category] = counts;
+      console.error(`✓ ${category}: 내용 체계 ${counts.contentSystemSubjects}과목 ${counts.contentSystemDomains}영역 항목 ${counts.contentItems}개 · 해설 ${counts.explanations}문단(성취기준 ${counts.standardsWithExplanation}개) · 고려 사항 ${counts.considerations}문단 (PDF 대조·판본 비교 통과)`);
+    }
+    for (const n of cur.notices) console.error(`  · ${n}`);
+    if (cur.skipped) console.error(`  · ${label} 범위 밖 과목 절 ${cur.skipped}개 건너뜀(subjects.json outOfScope)`);
   }
 
   fail('예외표 정리 필요', [
     ...Object.keys(codeLeads).filter((k) => !usedCodeLeads.has(k)).map((k) => `details-exceptions.json codeLeads '${k}'이(가) 쓰이지 않습니다.`),
     ...Object.keys(verticalLabels).filter((k) => !usedVerticalLabels.has(k)).map((k) => `details-exceptions.json verticalLabels '${k}'이(가) 쓰이지 않습니다.`),
+    ...Object.keys(domainNames).filter((k) => !usedDomainNames.has(k)).map((k) => `details-exceptions.json domainNames '${k}'이(가) 쓰이지 않습니다.`),
   ]);
-  const all = [...cur.subjects.map((s) => ({ ...s, sourceId: src.id })), ...prevSubjects];
-  const order = (a, b) => a.subjectId.localeCompare(b.subjectId, 'en') || (a.edition ? 1 : 0) - (b.edition ? 1 : 0);
-  const head = (s) => ({ subjectId: s.subjectId, subjectKorean: s.subjectKorean, sourceId: s.sourceId, ...(s.edition ? { edition: s.edition, editionNote: s.editionNote } : {}) });
-  const sourceNote = `${src.notice} 【별책 3】 기본 교육과정 HWP에서 추출하고 같은 고시의 PDF와 글자 대조한 원문. 저작권법 제7조에 따라 보호받지 않는 고시 원문이며 정확성·추적성을 위해 출처를 표기한다.`;
-  const contentSystems = {
-    version: 'kr-special-content-systems-v1', category: 'basic', sourceNote,
-    subjects: [...all].sort(order).map((s) => ({
-      ...head(s),
-      intro: s.contentSystem.intro,
-      domains: s.contentSystem.domains.map(({ standardCodes, ...d }) => d),
-    })),
-  };
-  const standardNotes = {
-    version: 'kr-special-standard-notes-v1', category: 'basic', sourceNote,
-    subjects: [...all].sort(order).map((s) => ({ ...head(s), intro: s.notes.intro, sections: s.notes.sections })),
-  };
-  writeFileSync(join(dataDir, 'basic', 'content-systems.json'), `${JSON.stringify(contentSystems, null, 1)}\n`);
-  writeFileSync(join(dataDir, 'basic', 'standard-notes.json'), `${JSON.stringify(standardNotes, null, 1)}\n`);
-  const counts = detailCounts(all);
-  console.error(`✓ 내용 체계 ${counts.contentSystemSubjects}과목 ${counts.contentSystemDomains}영역 항목 ${counts.contentItems}개 · 해설 ${counts.explanations}문단(성취기준 ${counts.standardsWithExplanation}개) · 고려 사항 ${counts.considerations}문단 (PDF 대조·판본 비교 통과)`);
   if (recordGates) {
     const gatesPath = join(here, 'gates.json');
     const gates = JSON.parse(readFileSync(gatesPath, 'utf8'));
-    gates.details = counts;
+    gates.details = gatesDetails;
     writeFileSync(gatesPath, `${JSON.stringify(gates, null, 1)}\n`);
     console.error('✓ pipeline/gates.json details 갱신');
   }

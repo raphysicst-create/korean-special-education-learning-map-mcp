@@ -35,7 +35,7 @@ npm run pipeline:fetch -- --pin
 npm run pipeline:discover
 ```
 
-`.cache/discovery-moe-2022-34-annex3.json`을 읽고 보고한다.
+`.cache/discovery-<출처 id>.json`(예: `discovery-nec-2026-2-annex3.json`)을 읽고 보고한다.
 
 - `prefixes`: 코드 접두어별 수량·학년군 코드·표본 원문
 - `unknownBandCodes`: 비어 있어야 한다. 아니면 `src/normalize.mjs`의 `GRADE_BANDS`를 실측에 맞게 고친다(테스트도 갱신).
@@ -45,12 +45,12 @@ npm run pipeline:discover
 
 ## 4. 과목 대응표 작성
 
-`pipeline/subjects.json`의 `mappings`를 채운다. 예:
+`pipeline/subjects.json`의 `mappings`를 채운다. 키는 discover 보고서의 접두어 그대로다(실측 2글자, 예 `[4국어01-01]`의 `국어`). 예:
 
 ```json
 "mappings": {
-  "국": { "id": "korean", "subjectKorean": "국어" },
-  "진": { "id": "career-vocation", "subjectKorean": "진로와 직업" }
+  "국어": { "id": "korean", "subjectKorean": "국어" },
+  "진로": { "id": "career-vocation", "subjectKorean": "진로와 직업" }
 }
 ```
 
@@ -62,10 +62,12 @@ npm run pipeline:discover
 npm run pipeline:extract -- --record-gates
 npm run pipeline:operation -- --record-gates
 npm run pipeline:details -- --record-gates
+npm run pipeline:guides -- --record-gates
 npm run pipeline:verify
 ```
 
-- `pipeline:details`는 별책 3 HWP에서 내용 체계 표와 성취기준 해설·적용 시 고려 사항을 가져와 별책 3 PDF와 대조하고, 이전 판 HWP와 비교한다. 원문 오기·세로쓰기 머리 칸은 `pipeline/details-exceptions.json`에 근거와 함께 적어야 통과한다. 새 HWP 전용 글자가 나오면 지면 이미지로 확인해 `cleanText`의 `PUA_MAP`에 더한다.
+- `pipeline:guides`는 같은 HWP에서 과목별 '1. 성격 및 목표'와 '3. 교수·학습 및 평가'를 가져와 PDF와 대조하고, 이전 판과 비교한다. 원문의 머리글 누락·항목 번호 결번·중복은 `details-exceptions.json`(`missingPartHeadings`·`itemNumbering`)에 근거와 함께 적어야 통과한다.
+- `pipeline:details`는 별책 3·2 HWP에서 내용 체계 표와 성취기준 해설·적용 시 고려 사항을 가져와 같은 별책 PDF와 대조하고, 이전 판 HWP와 비교한다. 원문 오기·세로쓰기 머리 칸은 `pipeline/details-exceptions.json`에 근거와 함께 적어야 통과한다. 새 HWP 전용 글자가 나오면 지면 이미지로 확인해 `cleanText`의 `PUA_MAP`에 더한다.
 - `pipeline:operation`은 별책 1 HWP에서 기본 교육과정 편성·운영 조항을 가져온다. 배당표 전사(`pipeline/operation-tables.json`)를 HWP 표 칸과 대조하고, 별책 1 PDF와도 대조한다. 실패하면 메시지가 가리키는 칸이나 문단을 지면과 비교해 고친다.
 
 - extract의 미해결 목록은 `pipeline/exceptions.json`에 수동 보정한다. 키는 `basic:[코드]` 또는 `[코드]`, 값은 원문 문자열 또는 `{ "text": "...", "domainKorean": "..." }`. 원문은 PDF에서 그대로 옮긴다.
@@ -117,3 +119,14 @@ npm run pipeline:verify
   - 결과: 내용 체계 16과목 47개 영역 1,382항목, 해설 679문단(성취기준 691개 모두), 고려 사항 667문단. 이전 판은 즐거운 생활·바른 생활·슬기로운 생활.
   - 검증: 모든 문단·항목이 PDF 텍스트에 있다. 수학 '수와 연산', 체육 '스포츠' 표를 지면 이미지와 칸 단위로 대조했다. HWP 전용 기호 3종은 지면 이미지로 확인했다.
   - 원문 오기 1건(수학 `[수학01-12]`)과 사회 세로쓰기 하위 범주 6개를 `details-exceptions.json`에 근거와 함께 적었다.
+
+## v0.2.0 실행 기록 (2026-11-15) — 별책 2 특수교육 전문 교과, 성격·목표·교수·학습 및 평가
+
+- **원본:** NCIC 「2022 개정 시기 > 특수교육(2026.01) > 특수교육 교과/영역」에서 별책 2 PDF(seq 10004196)·HWP(seq 10004195), 「특수교육(2024.08)」에서 제2024-4호 판 PDF(seq 10003979)·HWP(seq 10003980)를 받아 저장소 부모 폴더에 `[별책2] 유치원, 공통 및 선택 중심 교육과정(출처 id).확장자`로 두었다. HWP 둘 다 5.1.1.0, 암호·배포용 아님. 해시는 `sources.json`·`RIGHTS.md`.
+- **discover:** 별책 2 전체 성취기준 후보 1,458건, 접두어 29종. 전문 교과 24종(코드 12)과 범위 밖(공통 교육과정 국어(청각장애) `국`, 체육(시각·지체장애) `체`, 미술(시각장애) `미`, 점자, 수어, 초·중 시각장애인 자립생활·농인의 생활과 문화 `시자`·`농문` 6·9) 659건으로 갈랐다. 범위 밖 `체`는 체육(시각장애)·체육(지체장애)이 같은 코드를 써서 원문이 다른 중복 78종이 나오지만 수록 범위 밖이라 무해하다.
+- **대응표:** 총론 <표 8>과 별책 2 목차로 24과목을 확정했다(직업·생활 14, 이료 10). 영역 미확인·결번·버린 코드는 0건.
+- **extract:** 직업·생활 363건, 이료 436건. 제2024-4호 판과 양방향으로 같다(include 없음). 799건 전량이 두 판 PDF `-raw` 출력에 코드·원문 그대로 있다.
+- **details:** 직업·생활 67개 영역 719항목·해설 269·고려 사항 201, 이료 66개 영역 1,043항목·해설 436·고려 사항 183. PDF 대조·판본 비교 통과. 새로 받은 것: 한 열 표, 이료 하위 영역 열 표, 공통국어(청각장애)1·2의 공유 절 경계. 원문 표기 차이 — 안마·마사지·지압 영역 3 이름(`domainNames`), 이료 6개 영역 하위 영역 이름(안내만).
+- **guides:** 기본 교육과정 16과목(이전 판 바른 생활·슬기로운 생활·즐거운 생활), 직업·생활 14과목, 이료 10과목. 원문 오류 4곳을 `details-exceptions.json`에 적었다 — 2024-4호 즐거운 생활 '(1) 교수·학습의 방향' 머리글 누락, 정보처리 (타)·(자) 결번, 농생명 (다) 중복. 미술 두 항목은 PDF가 가운뎃점을 'ž'로 내보내 대조기가 가운뎃점을 빼고 비교하게 했다.
+- **지면 대조:** 해부·생리 '해부생리학의 기초'(4개 하위 영역 열)·'골격계통' 표, 정보처리 '(1) 교수·학습의 방향'의 (카)·(파)를 PDF 지면 이미지와 대조해 일치를 확인했다.
+- **verify·test:** 과목 40 · 성취기준 1,490 · 내용 체계 180개 영역 · 해설 1,384·고려 사항 1,051문단 · 성격·목표/교수·학습 및 평가 40과목. 테스트 92건 통과, `npm pack --dry-run` 604 kB(풀면 4.1 MB).

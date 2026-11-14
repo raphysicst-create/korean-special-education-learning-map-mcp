@@ -1,42 +1,121 @@
 {
- "taxonomyVersion": "v0.1.0",
+ "taxonomyVersion": "v0.2.0",
  "sourceNotice": [
   "교육부 고시 제2022-34호(2022.12.22.), 국가교육위원회 고시 제2026-2호(2026.1.21.) 일부개정 포함 【별책 3】 기본 교육과정",
   "교육부 고시 제2022-34호(2022.12.22.), 국가교육위원회 고시 제2024-4호(2024.8.16.) 일부개정 포함 【별책 3】 기본 교육과정",
+  "교육부 고시 제2022-34호(2022.12.22.), 국가교육위원회 고시 제2026-2호(2026.1.21.) 일부개정 포함 【별책 2】 유치원 교육과정, 공통 교육과정 및 선택 중심 교육과정 ([선택 중심 교육과정] - 특수교육 전문 교과(직업·생활, 이료))",
+  "교육부 고시 제2022-34호(2022.12.22.), 국가교육위원회 고시 제2024-4호(2024.8.16.) 일부개정 포함 【별책 2】 유치원 교육과정, 공통 교육과정 및 선택 중심 교육과정 ([선택 중심 교육과정] - 특수교육 전문 교과(직업·생활, 이료))",
   "교육부 고시 제2022-34호(2022.12.22.), 국가교육위원회 고시 제2026-2호(2026.1.21.) 일부개정 포함 【별책 1】 특수교육 교육과정 총론 (Ⅲ. 학교급별 교육과정 편성·운영의 기준 > 3. 기본 교육과정 편성·운영 (49~55쪽))"
  ],
  "counts": {
-  "subjects": 16,
-  "standards": 691,
+  "subjects": 40,
+  "standards": 1490,
   "previousEdition": 9,
   "categories": {
-   "basic": 691
+   "basic": 691,
+   "ilyo": 436,
+   "special-vocational": 363
   },
   "details": {
-   "contentSystemSubjects": 16,
-   "contentSystemDomains": 47,
-   "contentItems": 1382,
-   "noteSections": 140,
-   "noteGroups": 212,
-   "explanations": 679,
-   "considerations": 667,
-   "standardsWithExplanation": 691,
-   "previousEdition": {
-    "joyful-living": {
-     "contentItems": 21,
-     "explanations": 9,
-     "considerations": 9
-    },
-    "right-living": {
-     "contentItems": 20,
-     "explanations": 10,
-     "considerations": 10
-    },
-    "wise-living": {
-     "contentItems": 22,
-     "explanations": 11,
-     "considerations": 11
+   "basic": {
+    "contentSystemSubjects": 16,
+    "contentSystemDomains": 47,
+    "contentItems": 1382,
+    "noteSections": 140,
+    "noteGroups": 212,
+    "explanations": 679,
+    "considerations": 667,
+    "standardsWithExplanation": 691,
+    "previousEdition": {
+     "joyful-living": {
+      "contentItems": 21,
+      "explanations": 9,
+      "considerations": 9
+     },
+     "right-living": {
+      "contentItems": 20,
+      "explanations": 10,
+      "considerations": 10
+     },
+     "wise-living": {
+      "contentItems": 22,
+      "explanations": 11,
+      "considerations": 11
+     }
     }
+   },
+   "ilyo": {
+    "contentSystemSubjects": 10,
+    "contentSystemDomains": 66,
+    "contentItems": 1043,
+    "noteSections": 66,
+    "noteGroups": 174,
+    "explanations": 436,
+    "considerations": 183,
+    "standardsWithExplanation": 436,
+    "previousEdition": {}
+   },
+   "special-vocational": {
+    "contentSystemSubjects": 14,
+    "contentSystemDomains": 67,
+    "contentItems": 719,
+    "noteSections": 67,
+    "noteGroups": 67,
+    "explanations": 269,
+    "considerations": 201,
+    "standardsWithExplanation": 269,
+    "previousEdition": {}
+   }
+  },
+  "guides": {
+   "basic": {
+    "subjects": 16,
+    "natureParagraphs": 83,
+    "goalItems": 57,
+    "teachingItems": 310,
+    "assessmentItems": 271,
+    "subItems": 457,
+    "previousEdition": {
+     "joyful-living": {
+      "natureParagraphs": 7,
+      "goalItems": 3,
+      "teachingItems": 18,
+      "assessmentItems": 16,
+      "subItems": 51
+     },
+     "right-living": {
+      "natureParagraphs": 7,
+      "goalItems": 3,
+      "teachingItems": 18,
+      "assessmentItems": 16,
+      "subItems": 52
+     },
+     "wise-living": {
+      "natureParagraphs": 7,
+      "goalItems": 3,
+      "teachingItems": 18,
+      "assessmentItems": 16,
+      "subItems": 51
+     }
+    }
+   },
+   "ilyo": {
+    "subjects": 10,
+    "natureParagraphs": 41,
+    "goalItems": 50,
+    "teachingItems": 140,
+    "assessmentItems": 103,
+    "subItems": 24,
+    "previousEdition": {}
+   },
+   "special-vocational": {
+    "subjects": 14,
+    "natureParagraphs": 68,
+    "goalItems": 63,
+    "teachingItems": 259,
+    "assessmentItems": 290,
+    "subItems": 196,
+    "previousEdition": {}
    }
   },
   "operation": {
@@ -48,7 +127,7 @@
  },
  "files": {
   "subjects.json": {
-   "sha256": "efad91dbf474c223a75c51b1a8554ecec06226d3a52bec2e8aa5b8284b9e31ad"
+   "sha256": "b68aca9abdb0dd3b6699aa7c7f7f2a1b31a2d5436545d83771b1b049cba85e95"
   },
   "basic/curriculum-standards.json": {
    "sha256": "e78c8a9ddee4fabcdbfb73120b3c0695e9db8ef2d4ed546436da62bac4aa5279"
@@ -56,11 +135,44 @@
   "basic/standard-texts.json": {
    "sha256": "708290cbe1d500893117283c12dcf01bbe7193f45d893203df42ce86240971f8"
   },
+  "ilyo/curriculum-standards.json": {
+   "sha256": "31ebe6e24331f7eda3d0e58de88c90438f619b3ceb9e5e923b0e7987249968d0"
+  },
+  "ilyo/standard-texts.json": {
+   "sha256": "633cb09817ccbf9d6c4cbfa52c4f9fd8727f38b2f90269a8e96c26e0145f3fcc"
+  },
+  "special-vocational/curriculum-standards.json": {
+   "sha256": "90f25b0aaf62a8aa39d3539f0b689815a6c560870e57d1f8bba58a150284d24a"
+  },
+  "special-vocational/standard-texts.json": {
+   "sha256": "0ebd2d4fe07a728ea344d4305b19178fb9f37cdbdb7e3be81a866dc29d7e2de3"
+  },
   "basic/content-systems.json": {
    "sha256": "6da818a3da9f92199032e9df16d49899bbf82ebbee2738bf79dee9ba806b7281"
   },
   "basic/standard-notes.json": {
    "sha256": "bfb40425c094d03db8048ecb393ec0532b693a62fb32c61fea7d023450293f57"
+  },
+  "basic/subject-guides.json": {
+   "sha256": "7386b7ccdaa07891ff364999f034543e69097d109ce1b2edf38298083089621f"
+  },
+  "ilyo/content-systems.json": {
+   "sha256": "7d7ac4cffa0e07f3224622d9743f5eec271431458e34fe5dd10a532fc139736f"
+  },
+  "ilyo/standard-notes.json": {
+   "sha256": "b64d0626c1c9423673643d29c8abd83254a6b5e3e3aa30d14803871a186b95d4"
+  },
+  "ilyo/subject-guides.json": {
+   "sha256": "9a141cacd0f0b60671c75adfbee6f91704695a205b0aee40bb61b88c1540c2d6"
+  },
+  "special-vocational/content-systems.json": {
+   "sha256": "73788ee7c93adcb7d82d97d9f285acfca2d6f04aba24be7908061c045ce4b643"
+  },
+  "special-vocational/standard-notes.json": {
+   "sha256": "c642ca8a239224a3cb7843fb97a1030219fdf509397dab4165f0f66f098aa655"
+  },
+  "special-vocational/subject-guides.json": {
+   "sha256": "3f663dcede3bee482c9d0149004119b9e303da4db7e032a1e3c46e090fde9c76"
   },
   "operation-guidelines.json": {
    "sha256": "d5d6790f1ee6db6e8faee9359316ceb0a5191e63cbe5171966d867677cfa9b22"

@@ -9,11 +9,14 @@ import { fileURLToPath } from 'node:url';
 import { GRADE_BANDS, canonicalCode, parseBasicCode } from '../src/normalize.mjs';
 import { numberingGaps } from './extract-standards.mjs';
 import { HANGUL_ORDER, operationCounts } from './extract-operation.mjs';
-import { CATEGORIES, detailCounts } from './extract-details.mjs';
+import { CATEGORIES, detailCounts, domainNameMatches } from './extract-details.mjs';
+import { ITEM_ORDER, guideCounts } from './extract-guides.mjs';
 
 export const OPERATION_FILE = 'operation-guidelines.json';
 // 카테고리 폴더의 내용 체계·해설 파일(있으면 둘 다 있어야 한다).
 export const DETAIL_FILES = ['content-systems.json', 'standard-notes.json'];
+// 카테고리 폴더의 과목별 성격·목표, 교수·학습 및 평가 파일(있으면).
+export const GUIDE_FILE = 'subject-guides.json';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const defaultDataDir = join(here, '..', 'data', 'kr');
@@ -28,7 +31,9 @@ export function listCategories(dataDir) {
     .sort();
 }
 
-export function verifyAll(dataDir = defaultDataDir, gates = null) {
+const defaultExceptions = () => JSON.parse(readFileSync(join(here, 'details-exceptions.json'), 'utf8'));
+
+export function verifyAll(dataDir = defaultDataDir, gates = null, { domainNames = defaultExceptions().domainNames ?? {} } = {}) {
   const read = (rel) => JSON.parse(readFileSync(join(dataDir, rel), 'utf8'));
   const errors = [];
   const { subjects } = read('subjects.json');
@@ -57,6 +62,7 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
       if (s.edition && !s.editionNote) errors.push(`이전 판 안내 누락: ${s.key}`);
       if (s.category !== category) errors.push(`카테고리 폴더 불일치: ${s.key}`);
       if (!subjectById.has(s.subjectId)) errors.push(`미지 과목: ${s.key} → ${s.subjectId}`);
+      else if (subjectById.get(s.subjectId).category !== category) errors.push(`과목 카테고리 불일치: ${s.key} (과목은 ${subjectById.get(s.subjectId).category})`);
       if (!BAND_IDS.has(s.gradeBand)) errors.push(`미지 학년군: ${s.key} → ${s.gradeBand}`);
       const parsed = parseBasicCode(s.code);
       if (!parsed) errors.push(`코드 형식 오류: ${s.code}`);
@@ -88,10 +94,14 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
     const present = DETAIL_FILES.filter((f) => existsSync(join(dataDir, category, f)));
     if (present.length === 1) errors.push(`${category}: ${present[0]}만 있습니다 — 내용 체계·해설 파일은 함께 있어야 합니다.`);
     if (present.length === DETAIL_FILES.length) {
-      const d = verifyDetails(category, read(`${category}/content-systems.json`).subjects, read(`${category}/standard-notes.json`).subjects, standards, subjectById);
+      const d = verifyDetails(category, read(`${category}/content-systems.json`).subjects, read(`${category}/standard-notes.json`).subjects, standards, subjectById, domainNames);
       errors.push(...d.errors);
-      if (counts.details) errors.push('내용 체계·해설 수량은 아직 카테고리 하나만 셉니다 — verify를 확장하세요.');
-      counts.details = d.counts;
+      (counts.details ??= {})[category] = d.counts;
+    }
+    if (existsSync(join(dataDir, category, GUIDE_FILE))) {
+      const g = verifyGuides(category, read(`${category}/${GUIDE_FILE}`).subjects, standards, subjectById);
+      errors.push(...g.errors);
+      (counts.guides ??= {})[category] = g.counts;
     }
   }
   for (const s of subjects) {
@@ -115,13 +125,17 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
     errors.push(`게이트에 편성·운영 수량이 있는데 ${OPERATION_FILE}이(가) 없습니다.`);
   }
 
-  if (gates?.details) {
-    if (!counts.details) errors.push('게이트에 내용 체계·해설 수량이 있는데 데이터 파일이 없습니다.');
-    else {
-      for (const [k, v] of Object.entries(gates.details)) {
-        const got = counts.details[k];
-        if (JSON.stringify(got) !== JSON.stringify(v)) errors.push(`게이트 불일치: 내용 체계·해설 ${k} 기대 ${JSON.stringify(v)}, 실제 ${JSON.stringify(got)}`);
+  // 내용 체계·해설(details)과 성격·목표, 교수·학습 및 평가(guides) 수량 게이트는 카테고리별이다.
+  for (const [key, label] of [['details', '내용 체계·해설'], ['guides', '성격·목표, 교수·학습 및 평가']]) {
+    for (const [category, expected] of Object.entries(gates?.[key] ?? {})) {
+      const got = counts[key]?.[category];
+      if (!got) { errors.push(`게이트에 ${category} ${label} 수량이 있는데 데이터 파일이 없습니다.`); continue; }
+      for (const [k, v] of Object.entries(expected)) {
+        if (JSON.stringify(got[k]) !== JSON.stringify(v)) errors.push(`게이트 불일치: ${category} ${label} ${k} 기대 ${JSON.stringify(v)}, 실제 ${JSON.stringify(got[k])}`);
       }
+    }
+    for (const category of Object.keys(counts[key] ?? {})) {
+      if (gates && !gates[key]?.[category]) errors.push(`${category} ${label} 게이트가 없습니다 — --record-gates로 기록하세요.`);
     }
   }
 
@@ -139,6 +153,9 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
         const got = perSubject.get(subjectId) ?? 0;
         if (got !== n) errors.push(`게이트 불일치: 과목 ${subjectId} 기대 ${n}, 실제 ${got}`);
       }
+    }
+    for (const category of Object.keys(counts.categories)) {
+      if (!gates.categories?.[category]) errors.push(`${category} 성취기준 게이트가 없습니다 — pipeline:extract -- --record-gates로 기록하세요.`);
     }
   }
   return { errors, counts };
@@ -161,7 +178,7 @@ const squashName = (v) => String(v ?? '').normalize('NFC').replace(/[・･⋅�
  *    코드가 상자 안에 있으며, 문단이 '다.'로 끝나고 깨진 글자가 없다.
  * 이전 판 성취기준이 따로 없는 과목(바른 생활·슬기로운 생활)의 이전 판은 최신 판 성취기준과 맞춘다.
  */
-export function verifyDetails(category, contentSystems, standardNotes, standards, subjectById) {
+export function verifyDetails(category, contentSystems, standardNotes, standards, subjectById, domainNames = {}) {
   const errors = [];
   const keyOf = (s) => `${s.subjectId}@${s.edition ?? ''}`;
   const where = (s) => `${category} ${s.subjectId}${s.edition ? `@${s.edition}` : ''}`;
@@ -191,7 +208,14 @@ export function verifyDetails(category, contentSystems, standardNotes, standards
     for (const t of x.intro) if (BROKEN_GLYPH.test(t) || !NOTE_END.test(t)) errors.push(`${where(x)}: 내용 체계 안내 문장 이상 …${t.slice(-15)}`);
     for (const d of x.domains) {
       const w = `${where(x)} 내용 체계 ${d.domainNo} ${d.domainKorean}`;
-      if (domains.has(d.domainNo) && squashName(domains.get(d.domainNo)) !== squashName(d.domainKorean)) errors.push(`${w}: 영역 이름이 성취기준('${domains.get(d.domainNo)}')과 다릅니다.`);
+      if (domains.has(d.domainNo) && squashName(domains.get(d.domainNo)) !== squashName(d.domainKorean)
+        && !domainNameMatches(x.subjectId, d.domainNo, d.domainKorean, domains.get(d.domainNo), domainNames)) errors.push(`${w}: 영역 이름이 성취기준('${domains.get(d.domainNo)}')과 다릅니다.`);
+      if (d.subAreas) {
+        // 하위 영역 열 표(이료): 행의 하위 영역이 열 머리 목록 안에 있고, 열마다 행이 하나 이상 있어야 한다.
+        const used = new Set(d.rows.map((r) => r.subArea));
+        if (d.rows.some((r) => !d.subAreas.includes(r.subArea))) errors.push(`${w}: 하위 영역 열 밖의 행`);
+        for (const sa of d.subAreas) if (!used.has(sa)) errors.push(`${w}: 하위 영역 '${sa}'의 내용 요소가 없습니다.`);
+      }
       if (!d.coreIdeas.length) errors.push(`${w}: 핵심 아이디어 없음`);
       for (const t of d.coreIdeas) if (BROKEN_GLYPH.test(t) || !/다\.$/.test(t)) errors.push(`${w}: 핵심 아이디어 문장 이상 …${t.slice(-15)}`);
       const colBands = d.columns.map((c) => c.gradeBand);
@@ -245,6 +269,60 @@ export function verifyDetails(category, contentSystems, standardNotes, standards
     ...c, contentSystem: { intro: c.intro, domains: c.domains }, notes: standardNotes.find((n) => keyOf(n) === keyOf(c)),
   })).filter((m) => m.notes);
   return { errors, counts: detailCounts(merged) };
+}
+
+/**
+ * 과목별 성격·목표, 교수·학습 및 평가(subject-guides.json) 검증.
+ *  - 판 구성: 성취기준이 있는 과목마다 최신 판이 하나 있고, 이전 판은 editionNote가 있다.
+ *  - 성격 문단·총괄 목표·세부 목표는 '다.'로 끝난다. 세부 목표 번호는 (1)부터 차례대로다.
+ *  - 교수·학습·평가는 각각 (1) 방향·(2) 방법 두 부분이고 항목이 있다. 항목 번호는 (가)… 꼴이고, '다.'로 끝나지
+ *    않는 항목(소제목형, 2026 통합교과)은 하위 문단이 있어야 한다. 깨진 글자가 없다.
+ */
+export function verifyGuides(category, guides, standards, subjectById) {
+  const errors = [];
+  const keyOf = (s) => `${s.subjectId}@${s.edition ?? ''}`;
+  const where = (s) => `${category} ${s.subjectId}${s.edition ? `@${s.edition}` : ''} 안내`;
+  const keys = guides.map(keyOf);
+  if (new Set(keys).size !== keys.length) errors.push(`${category}: 성격·목표 안내에 같은 과목·판이 두 번 있습니다.`);
+  for (const id of new Set(standards.filter((x) => !x.edition).map((x) => x.subjectId))) {
+    if (!guides.some((g) => g.subjectId === id && !g.edition)) errors.push(`${category} ${id}: 최신 판 성격·목표, 교수·학습 및 평가가 없습니다.`);
+  }
+  const sentence = (t) => typeof t === 'string' && t.trim() && !BROKEN_GLYPH.test(t) && /다\.$/.test(t);
+  const clean = (t) => typeof t === 'string' && t.trim() && !BROKEN_GLYPH.test(t);
+  for (const g of guides) {
+    const w = where(g);
+    if (!subjectById.has(g.subjectId)) errors.push(`${w}: 미지 과목`);
+    else if (subjectById.get(g.subjectId).category !== category) errors.push(`${w}: 과목 카테고리 불일치`);
+    if (g.edition && !g.editionNote) errors.push(`${w}: 이전 판 안내(editionNote) 누락`);
+    if (!g.nature?.sections?.length) errors.push(`${w}: 성격 없음`);
+    for (const sec of g.nature?.sections ?? []) {
+      if (!/성격$/.test(sec.heading)) errors.push(`${w}: 성격 머리글 이상 '${sec.heading}'`);
+      if (!sec.paragraphs.length) errors.push(`${w}: '${sec.heading}' 문단 없음`);
+      for (const t of sec.paragraphs) if (!sentence(t)) errors.push(`${w} 성격: 문장 종결·글자 이상 …${String(t).slice(-15)}`);
+    }
+    if (!g.goals?.overall?.length || !g.goals?.items?.length) errors.push(`${w}: 목표(총괄·세부) 없음`);
+    for (const t of g.goals?.overall ?? []) if (!sentence(t)) errors.push(`${w} 총괄 목표: 문장 이상 …${String(t).slice(-15)}`);
+    (g.goals?.items ?? []).forEach((it, i) => {
+      if (it.no !== `(${i + 1})`) errors.push(`${w} 세부 목표: ${i + 1}번째 번호가 ${it.no}`);
+      if (!sentence(it.text)) errors.push(`${w} 세부 목표 ${it.no}: 문장 이상 …${String(it.text).slice(-15)}`);
+    });
+    for (const [key, word] of [['teachingLearning', '교수·학습'], ['assessment', '평가']]) {
+      const grp = g[key];
+      if (!grp) { errors.push(`${w}: ${word} 없음`); continue; }
+      if (grp.parts.map((x) => x.id).join(',') !== 'direction,methods') errors.push(`${w} ${word}: 부분 구성이 (1) 방향·(2) 방법이 아닙니다.`);
+      for (const part of grp.parts) {
+        if (part.heading !== null && !part.heading.includes(word)) errors.push(`${w} ${word}: 부분 머리글 이상 '${part.heading}'`);
+        if (!part.items.length) errors.push(`${w} ${word} ${part.id}: 항목 없음`);
+        for (const it of part.items) {
+          if (!/^\(.\)$/.test(it.no) || !ITEM_ORDER.includes(it.no.slice(1, -1))) errors.push(`${w} ${word} ${part.id}: 항목 번호 이상 ${it.no}`);
+          if (!clean(it.text)) errors.push(`${w} ${word} ${part.id} ${it.no}: 글자 이상`);
+          else if (!/다\.$/.test(it.text) && !it.subItems?.length) errors.push(`${w} ${word} ${part.id} ${it.no}: '다.'로 끝나지 않는 항목에 하위 문단이 없습니다 …${it.text.slice(-15)}`);
+          for (const t of it.subItems ?? []) if (!clean(t)) errors.push(`${w} ${word} ${part.id} ${it.no}: 하위 문단 글자 이상`);
+        }
+      }
+    }
+  }
+  return { errors, counts: guideCounts(guides) };
 }
 
 /**
@@ -304,7 +382,7 @@ export function computeManifestFiles(dataDir) {
   const files = {};
   const rels = ['subjects.json', ...listCategories(dataDir).flatMap((c) => CATEGORY_FILES.map((f) => `${c}/${f}`))];
   for (const c of listCategories(dataDir)) {
-    for (const f of DETAIL_FILES) if (existsSync(join(dataDir, c, f))) rels.push(`${c}/${f}`);
+    for (const f of [...DETAIL_FILES, GUIDE_FILE]) if (existsSync(join(dataDir, c, f))) rels.push(`${c}/${f}`);
   }
   if (existsSync(join(dataDir, OPERATION_FILE))) rels.push(OPERATION_FILE);
   for (const rel of rels) {
@@ -355,8 +433,10 @@ function main() {
       .map((a) => `${a.notice} 【별책 ${a.annexNo}】 ${a.titleKorean}${a.section ? ` (${a.section})` : ''}`))],
   });
   const op = counts.operation ? ` · 편성·운영 ${counts.operation.organizationItems + counts.operation.criteriaItems}항` : '';
-  const det = counts.details ? ` · 내용 체계 ${counts.details.contentSystemDomains}영역 · 해설 ${counts.details.explanations}·고려 사항 ${counts.details.considerations}문단` : '';
-  console.error(`✓ 검증 통과 — 과목 ${counts.subjects} · 성취기준 ${counts.standards}건${det}${op}, manifest.json 기록`);
+  const total = (key, k) => Object.values(counts[key] ?? {}).reduce((n, c) => n + (c[k] ?? 0), 0);
+  const det = counts.details ? ` · 내용 체계 ${total('details', 'contentSystemDomains')}영역 · 해설 ${total('details', 'explanations')}·고려 사항 ${total('details', 'considerations')}문단` : '';
+  const gd = counts.guides ? ` · 성격·목표/교수·학습 및 평가 ${total('guides', 'subjects')}과목` : '';
+  console.error(`✓ 검증 통과 — 과목 ${counts.subjects} · 성취기준 ${counts.standards}건${det}${gd}${op}, manifest.json 기록`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

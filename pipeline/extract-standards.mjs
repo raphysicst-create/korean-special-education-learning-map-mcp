@@ -10,8 +10,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  CODE_SOURCE, GRADE_BANDS, canonicalCode, gradeBandByCode, normalizeCode, normalizeRoman,
+  CODE_SOURCE, GRADE_BANDS, canonicalCode, displayCode, gradeBandByCode, normalizeRoman,
 } from '../src/normalize.mjs';
+import { annexCategories, categoryInfo, loadSubjectConfig, routeCode } from './scope.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..');
@@ -140,9 +141,10 @@ function scanListCodes(norm) {
     if (indent < 0 || indent > MAX_LIST_INDENT) continue;
     const end = m.index + m[0].length;
     const after = norm[end];
+    // 코드는 원문 표기(로마 숫자 포함) 그대로, 접두어는 대응표 키(로마 숫자 → ASCII)로 둔다.
     const entry = {
-      code: normalizeCode(m[0]),
-      bandCode: m[1], prefix: m[2], domainNo: m[3], itemNo: m[4],
+      code: displayCode(m[0]),
+      bandCode: m[1], prefix: normalizeRoman(m[2]), domainNo: m[3], itemNo: m[4],
       start: m.index, end,
     };
     if (after === undefined || /\s/.test(after) || !PARTICLE_AFTER_CODE.test(norm.slice(end, end + 4))) {
@@ -199,7 +201,8 @@ function domainFor(headings, pos, floor) {
  * rejected: 조사가 붙어 버린 줄 첫머리 코드 중 목록 항목으로는 한 번도 나오지 않은 것(누락 의심).
  */
 export function extractStandards(pdfText) {
-  const norm = normalizeRoman(stripPageFurniture(pdfText).normalize('NFC'));
+  // 로마 숫자는 원문대로 둔다(전문 교과 '기초작업기술Ⅰ'). 코드 비교는 canonicalCode가 맞춘다.
+  const norm = stripPageFurniture(pdfText).normalize('NFC');
   const { codes, rejected } = scanListCodes(norm);
   const headings = findDomainHeadings(norm);
   const sections = findStandardsSections(norm);
@@ -278,13 +281,24 @@ export function discoveryReport(records, duplicates, rejected = []) {
   };
 }
 
+/** subjects.json 과목 항목의 머리(수량 전). info: 카테고리 표시 정보(교육과정·교과(군)). */
+function subjectEntry(map, { category, prefix, sourceId, info }) {
+  return {
+    id: map.id, subjectKorean: map.subjectKorean, category,
+    ...(info?.curriculumKorean ? { curriculumKorean: info.curriculumKorean } : {}),
+    ...(info?.subjectGroupKorean ? { subjectGroupKorean: info.subjectGroupKorean } : {}),
+    codePrefix: prefix, sourceId, gradeBands: new Set(), standardCount: 0,
+    ...(map.note || info?.note ? { note: [map.note, info?.note].filter(Boolean).join(' ') } : {}),
+  };
+}
+
 /**
  * 레코드 + 과목 대응표 + 수동 예외 → 출시 데이터. 원문이 확보되지 않은 성취기준은
  * 출시하지 않고 failures로 돌려준다(원문 범위 = 출시 범위). 같은 코드가 다른 원문으로 두 번
  * 나온 충돌(duplicates 중 sameText=false)은 exceptions에 원문을 적어 확정하기 전까지 출시하지 않는다.
  */
 export function buildDataset(records, {
-  category, sourceId, mappings, exceptions = {}, duplicates = [], edition = null, editionNote = null,
+  category, sourceId, mappings, exceptions = {}, duplicates = [], edition = null, editionNote = null, info = null,
 }) {
   const failures = [];
   const standards = [];
@@ -314,13 +328,7 @@ export function buildDataset(records, {
     if (UNMAPPED_GLYPH.test(text)) { failures.push({ code: r.code, reason: 'unmapped-glyph', preview: text.slice(0, 80) }); continue; }
     if (!domainKorean) { failures.push({ code: r.code, reason: 'missing-domain' }); continue; }
 
-    if (!subjects.has(map.id)) {
-      subjects.set(map.id, {
-        id: map.id, subjectKorean: map.subjectKorean, category, codePrefix: r.prefix,
-        sourceId, gradeBands: new Set(), standardCount: 0,
-        ...(map.note ? { note: map.note } : {}),
-      });
-    }
+    if (!subjects.has(map.id)) subjects.set(map.id, subjectEntry(map, { category, prefix: r.prefix, sourceId, info }));
     const subject = subjects.get(map.id);
     subject.gradeBands.add(band.id);
     subject.standardCount += 1;
@@ -407,115 +415,173 @@ function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 1)}\n`);
 }
 
+/**
+ * 추출 레코드를 카테고리별로 가른다(별책 2는 범위 밖 접두어가 섞여 있다).
+ * 반환: { byCategory: Map(category → records), outOfScope: Map('접두어|학년군' → 건수), unmapped: records }
+ */
+export function routeRecords(records, annex, config) {
+  const byCategory = new Map(annexCategories(annex).map((c) => [c, []]));
+  const outOfScope = new Map();
+  const unmapped = [];
+  for (const r of records) {
+    const hit = routeCode(r, annex, config);
+    if (!hit) unmapped.push(r);
+    else if (hit.outOfScope) {
+      const k = `${r.prefix}|${r.bandCode}`;
+      outOfScope.set(k, (outOfScope.get(k) ?? 0) + 1);
+    } else byCategory.get(hit.category).push(r);
+  }
+  return { byCategory, outOfScope, unmapped };
+}
+
+/** 줄 첫머리에서 버린 코드(rejected) 중 이 카테고리 범위의 것만 — 범위 밖 과목의 조판은 따지지 않는다. */
+function rejectedInScope(rejected, annex, config, category) {
+  return rejected.filter((r) => {
+    const m = new RegExp(`^${CODE_SOURCE}$`).exec(r.code);
+    if (!m) return category === annexCategories(annex)[0];
+    const hit = routeCode({ prefix: m[2], bandCode: m[1] }, annex, config);
+    if (hit?.outOfScope) return false;
+    return hit ? hit.category === category : category === annexCategories(annex)[0];
+  });
+}
+
 function main() {
   const discover = process.argv.includes('--discover');
   const recordGates = process.argv.includes('--record-gates');
   const sources = JSON.parse(readFileSync(join(here, 'sources.json'), 'utf8'));
   const pdfPaths = JSON.parse(readFileSync(join(repoRoot, '.cache', 'pdf-paths.json'), 'utf8'));
-  const { mappings } = JSON.parse(readFileSync(join(here, 'subjects.json'), 'utf8'));
+  const config = loadSubjectConfig();
   const exceptions = JSON.parse(readFileSync(join(here, 'exceptions.json'), 'utf8'));
+  const pathOf = (a) => {
+    if (!pdfPaths[a.id]) throw new Error(`${a.id}의 PDF 경로가 없습니다 — pipeline:fetch를 먼저 실행하세요.`);
+    return pdfPaths[a.id];
+  };
+  const unmappedFailures = (list) => list.map((r) => ({ code: r.code, reason: 'unmapped-prefix', prefix: `${r.prefix}(${r.bandCode})` }));
 
   const allSubjects = [];
   const gates = { release: null, categories: {} };
   let failed = 0;
+  const report = (label, failures) => {
+    if (!failures.length) return;
+    failed += failures.length;
+    console.error(`✗ ${label} 미해결 ${failures.length}건 — subjects.json·exceptions.json 보정 후 재실행:`);
+    for (const f of failures.slice(0, 50)) {
+      console.error(`  - ${f.code} [${f.reason}]${f.preview ? ` ${f.preview}…` : ''}${f.prefix ? ` 접두어=${f.prefix}` : ''}`);
+    }
+  };
   for (const annex of sources.annexes.filter((a) => (a.role ?? 'standards') === 'standards')) {
-    const pdfPath = pdfPaths[annex.id];
-    if (!pdfPath) throw new Error(`${annex.id}의 PDF 경로가 없습니다 — pipeline:fetch를 먼저 실행하세요.`);
-    const { records, duplicates, rejected } = extractStandards(pdftotext(pdfPath));
+    const ex = extractStandards(pdftotext(pathOf(annex)));
+    const routed = routeRecords(ex.records, annex, config);
 
     if (discover) {
-      const report = discoveryReport(records, duplicates, rejected);
-      writeJson(join(repoRoot, '.cache', `discovery-${annex.id}.json`), report);
-      console.error(`✓ ${annex.id}: 성취기준 후보 ${report.totalStandards}건, 접두어 ${report.prefixes.length}종`);
-      for (const p of report.prefixes) {
+      const rep = discoveryReport(ex.records, ex.duplicates, ex.rejected);
+      rep.scope = {
+        categories: Object.fromEntries([...routed.byCategory].map(([c, list]) => [c, list.length])),
+        outOfScope: Object.fromEntries(routed.outOfScope),
+        unmapped: [...new Set(routed.unmapped.map((r) => `${r.prefix}|${r.bandCode}`))],
+      };
+      writeJson(join(repoRoot, '.cache', `discovery-${annex.id}.json`), rep);
+      console.error(`✓ ${annex.id}: 성취기준 후보 ${rep.totalStandards}건, 접두어 ${rep.prefixes.length}종`);
+      for (const p of rep.prefixes) {
         console.error(`  - ${p.prefix}: ${p.count}건 · 학년군 코드 ${p.bandCodes.join('/')} · 예) ${p.samples[0]?.code} ${p.samples[0]?.text}`);
       }
-      if (report.unknownBandCodes.length) console.error(`  ⚠ 미지 학년군 코드: ${report.unknownBandCodes.join(', ')}`);
-      if (report.repeatedCodes.length) console.error(`  · 같은 원문 반복(해설 머리) ${report.repeatedCodes.length}종 — 무해`);
-      if (report.duplicateCodes.length) console.error(`  ⚠ 원문이 다른 중복 코드 ${report.duplicateCodes.length}종: ${report.duplicateCodes.join(' ')}`);
-      if (report.rejectedCodes.length) console.error(`  ⚠ 조사가 붙어 버린 줄 첫머리 코드(목록 항목 없음 — 누락 의심) ${report.rejectedCodes.length}건: ${report.rejectedCodes.map((r) => r.context).join(' / ')}`);
-      if (report.numberingGaps.length) console.error(`  ⚠ 순번 결번 ${report.numberingGaps.length}묶음: ${report.numberingGaps.map((g) => `${g.group}→${g.missing.join(',')}`).join(' ')}`);
-      if (report.missingDomain.length) console.error(`  ⚠ 영역 미확인 ${report.missingDomain.length}건 (대응표 domainKorean으로 채울 과목인지 확인)`);
-      if (report.suspicious.length) console.error(`  ⚠ 원문 이상 ${report.suspicious.length}건`);
+      console.error(`  · 수록 범위: ${Object.entries(rep.scope.categories).map(([c, n]) => `${c} ${n}건`).join(', ')}${routed.outOfScope.size ? ` · 범위 밖 ${[...routed.outOfScope].map(([k, n]) => `${k} ${n}`).join(', ')}` : ''}`);
+      if (rep.scope.unmapped.length) console.error(`  ⚠ 대응표에 없는 접두어|학년군: ${rep.scope.unmapped.join(', ')}`);
+      if (rep.unknownBandCodes.length) console.error(`  ⚠ 미지 학년군 코드: ${rep.unknownBandCodes.join(', ')}`);
+      if (rep.repeatedCodes.length) console.error(`  · 같은 원문 반복(해설 머리) ${rep.repeatedCodes.length}종 — 무해`);
+      if (rep.duplicateCodes.length) console.error(`  ⚠ 원문이 다른 중복 코드 ${rep.duplicateCodes.length}종: ${rep.duplicateCodes.join(' ')}`);
+      if (rep.rejectedCodes.length) console.error(`  ⚠ 조사가 붙어 버린 줄 첫머리 코드(목록 항목 없음 — 누락 의심) ${rep.rejectedCodes.length}건: ${rep.rejectedCodes.map((r) => r.context).join(' / ')}`);
+      if (rep.numberingGaps.length) console.error(`  ⚠ 순번 결번 ${rep.numberingGaps.length}묶음: ${rep.numberingGaps.map((g) => `${g.group}→${g.missing.join(',')}`).join(' ')}`);
+      if (rep.missingDomain.length) console.error(`  ⚠ 영역 미확인 ${rep.missingDomain.length}건 (대응표 domainKorean으로 채울 과목인지 확인)`);
+      if (rep.suspicious.length) console.error(`  ⚠ 원문 이상 ${rep.suspicious.length}건`);
       continue;
     }
 
-    const built = buildDataset(records, {
-      category: annex.category, sourceId: annex.id, mappings, exceptions, duplicates,
-    });
-    for (const r of rejected) {
-      built.failures.push({ code: r.code, reason: 'rejected-list-code', preview: r.context });
-    }
-    for (const g of numberingGaps(records)) {
-      built.failures.push({ code: g.group, reason: 'numbering-gap', preview: `결번 ${g.missing.join(',')}` });
-    }
-    const currentCount = built.standards.length;
-    const previousCounts = {};
-    for (const prev of sources.annexes.filter((a) => a.role === 'standards-previous' && a.category === annex.category)) {
-      if (!pdfPaths[prev.id]) throw new Error(`${prev.id}의 PDF 경로가 없습니다 — pipeline:fetch를 먼저 실행하세요.`);
-      const px = extractStandards(pdftotext(pdfPaths[prev.id]));
-      const pBuilt = buildDataset(px.records, {
-        category: prev.category, sourceId: prev.id, mappings, exceptions, duplicates: px.duplicates,
-        edition: prev.edition, editionNote: prev.editionNote,
+    report(`${annex.id} 대응표`, unmappedFailures(routed.unmapped));
+    const prevs = sources.annexes
+      .filter((a) => a.role === 'standards-previous' && a.annexNo === annex.annexNo)
+      .map((prev) => {
+        const px = extractStandards(pdftotext(pathOf(prev)));
+        const pr = routeRecords(px.records, prev, config);
+        report(`${prev.id} 대응표`, unmappedFailures(pr.unmapped));
+        return { prev, px, pr };
       });
-      const toIds = (prefixes) => new Set((prefixes ?? []).map((p) => {
-        if (!mappings[p]) throw new Error(`${prev.id}: 대응표에 없는 접두어 ${p}`);
-        return mappings[p].id;
-      }));
-      const include = toIds(prev.include?.prefixes);
-      const currentOnly = toIds(prev.currentOnly?.prefixes);
-      const sel = selectPreviousEdition(built, pBuilt, include, currentOnly);
-      built.failures.push(
-        ...pBuilt.failures.map((f) => ({ ...f, code: `${prev.edition} ${f.code}` })),
-        ...px.rejected.map((r) => ({ code: `${prev.edition} ${r.code}`, reason: 'rejected-list-code', preview: r.context })),
-        ...numberingGaps(px.records).map((g) => ({ code: `${prev.edition} ${g.group}`, reason: 'numbering-gap', preview: `결번 ${g.missing.join(',')}` })),
-        ...sel.failures.map((f) => ({ ...f, code: `${prev.edition} ${f.code}` })),
-      );
-      built.standards.push(...sel.standards);
-      built.texts.push(...sel.texts);
-      for (const [sid, info] of Object.entries(sel.bySubject)) {
-        // 최신 판에서 없어진 과목이면 수량 0인 과목으로 두고 이전 판만 단다.
-        let subject = built.subjects.find((s) => s.id === sid);
-        if (!subject) {
-          const [prefix, map] = Object.entries(mappings).find(([, m]) => m.id === sid);
-          subject = {
-            id: sid, subjectKorean: map.subjectKorean, category: annex.category, codePrefix: prefix,
-            sourceId: annex.id, gradeBands: [], standardCount: 0, ...(map.note ? { note: map.note } : {}),
+
+    for (const category of annexCategories(annex)) {
+      const mappings = config.mappings?.[category] ?? {};
+      const info = categoryInfo(category, config);
+      const records = routed.byCategory.get(category);
+      const built = buildDataset(records, {
+        category, sourceId: annex.id, mappings, exceptions, duplicates: ex.duplicates, info,
+      });
+      for (const r of rejectedInScope(ex.rejected, annex, config, category)) {
+        built.failures.push({ code: r.code, reason: 'rejected-list-code', preview: r.context });
+      }
+      for (const g of numberingGaps(records)) {
+        built.failures.push({ code: g.group, reason: 'numbering-gap', preview: `결번 ${g.missing.join(',')}` });
+      }
+      const currentCount = built.standards.length;
+      const previousCounts = {};
+      for (const { prev, px, pr } of prevs) {
+        const pRecords = pr.byCategory.get(category) ?? [];
+        const pBuilt = buildDataset(pRecords, {
+          category, sourceId: prev.id, mappings, exceptions, duplicates: px.duplicates,
+          edition: prev.edition, editionNote: prev.editionNote, info,
+        });
+        // include·currentOnly 접두어 중 이 카테고리의 것만. 어느 카테고리에도 없으면 설정 오류다.
+        const toIds = (prefixes) => new Set((prefixes ?? []).filter((p) => {
+          if (!annexCategories(prev).some((c) => config.mappings?.[c]?.[p])) throw new Error(`${prev.id}: 대응표에 없는 접두어 ${p}`);
+          return Boolean(mappings[p]);
+        }).map((p) => mappings[p].id));
+        const include = toIds(prev.include?.prefixes);
+        const currentOnly = toIds(prev.currentOnly?.prefixes);
+        const sel = selectPreviousEdition(built, pBuilt, include, currentOnly);
+        built.failures.push(
+          ...pBuilt.failures.map((f) => ({ ...f, code: `${prev.edition} ${f.code}` })),
+          ...rejectedInScope(px.rejected, prev, config, category).map((r) => ({ code: `${prev.edition} ${r.code}`, reason: 'rejected-list-code', preview: r.context })),
+          ...numberingGaps(pRecords).map((g) => ({ code: `${prev.edition} ${g.group}`, reason: 'numbering-gap', preview: `결번 ${g.missing.join(',')}` })),
+          ...sel.failures.map((f) => ({ ...f, code: `${prev.edition} ${f.code}` })),
+        );
+        built.standards.push(...sel.standards);
+        built.texts.push(...sel.texts);
+        for (const [sid, infoPrev] of Object.entries(sel.bySubject)) {
+          // 최신 판에서 없어진 과목이면 수량 0인 과목으로 두고 이전 판만 단다.
+          let subject = built.subjects.find((s) => s.id === sid);
+          if (!subject) {
+            const [prefix, map] = Object.entries(mappings).find(([, m]) => m.id === sid);
+            subject = { ...subjectEntry(map, { category, prefix, sourceId: annex.id, info }), gradeBands: [] };
+            built.subjects.push(subject);
+            built.subjects.sort((a, b) => a.id.localeCompare(b.id, 'en'));
+          }
+          subject.previousEdition = {
+            edition: prev.edition, sourceId: prev.id, notice: prev.notice, note: prev.editionNote,
+            standardCount: infoPrev.count, gradeBands: [...infoPrev.gradeBands],
           };
-          built.subjects.push(subject);
-          built.subjects.sort((a, b) => a.id.localeCompare(b.id, 'en'));
+          previousCounts[sid] = infoPrev.count;
         }
-        subject.previousEdition = {
-          edition: prev.edition, sourceId: prev.id, notice: prev.notice, note: prev.editionNote,
-          standardCount: info.count, gradeBands: [...info.gradeBands],
-        };
-        previousCounts[sid] = info.count;
+        console.error(`✓ ${prev.id} ${category}: 이전 판 ${sel.standards.length}건 함께 수록${include.size ? `(${[...include].join(', ')})` : ''} — 최신 판 신설 ${[...currentOnly].join(', ') || '없음'}, 나머지 과목은 두 판이 양방향으로 같음 확인`);
       }
-      console.error(`✓ ${prev.id}: 이전 판 ${sel.standards.length}건 함께 수록(${[...include].join(', ')}) — 최신 판 신설 ${[...currentOnly].join(', ') || '없음'}, 나머지 과목은 두 판이 양방향으로 같음 확인`);
+      built.texts.sort((a, b) => a.key.localeCompare(b.key, 'ko'));
+      const dir = join(repoRoot, 'data', 'kr', category);
+      writeJson(join(dir, 'curriculum-standards.json'), {
+        version: 'kr-special-standards-v1', category, standards: built.standards,
+      });
+      writeJson(join(dir, 'standard-texts.json'), {
+        version: 'kr-special-standard-texts-v1',
+        sourceNote: `${annex.notice} 【별책 ${annex.annexNo}】 ${annex.titleKorean}${info.subjectGroupKorean ? ` 중 특수교육 전문 교과(${info.subjectGroupKorean})` : ''} PDF에서 추출한 성취기준 본문. 저작권법 제7조 제2호에 따라 보호받지 않는 고시 원문이며 정확성·추적성을 위해 출처를 표기한다.`,
+        texts: built.texts,
+      });
+      allSubjects.push(...built.subjects);
+      gates.categories[category] = {
+        subjects: built.subjects.length, standards: currentCount,
+        bySubject: Object.fromEntries(built.subjects.map((s) => [s.id, s.standardCount])),
+        ...(Object.keys(previousCounts).length ? { previousEdition: previousCounts } : {}),
+      };
+      console.error(`✓ ${annex.id} ${category}: 과목 ${built.subjects.length} · 성취기준 ${currentCount}건 기록`);
+      report(`${annex.id} ${category}`, built.failures);
     }
-    built.texts.sort((a, b) => a.key.localeCompare(b.key, 'ko'));
-    const dir = join(repoRoot, 'data', 'kr', annex.category);
-    writeJson(join(dir, 'curriculum-standards.json'), {
-      version: 'kr-special-standards-v1', category: annex.category, standards: built.standards,
-    });
-    writeJson(join(dir, 'standard-texts.json'), {
-      version: 'kr-special-standard-texts-v1',
-      sourceNote: `${annex.notice} 【별책 ${annex.annexNo}】 ${annex.titleKorean} PDF에서 추출한 성취기준 본문. 저작권법 제7조 제2호에 따라 보호받지 않는 고시 원문이며 정확성·추적성을 위해 출처를 표기한다.`,
-      texts: built.texts,
-    });
-    allSubjects.push(...built.subjects);
-    gates.categories[annex.category] = {
-      subjects: built.subjects.length, standards: currentCount,
-      bySubject: Object.fromEntries(built.subjects.map((s) => [s.id, s.standardCount])),
-      ...(Object.keys(previousCounts).length ? { previousEdition: previousCounts } : {}),
-    };
-    console.error(`✓ ${annex.id}: 과목 ${built.subjects.length} · 성취기준 ${currentCount}건 기록`);
-    if (built.failures.length) {
-      failed += built.failures.length;
-      console.error(`✗ 미해결 ${built.failures.length}건 — subjects.json·exceptions.json 보정 후 재실행:`);
-      for (const f of built.failures.slice(0, 50)) {
-        console.error(`  - ${f.code} [${f.reason}]${f.preview ? ` ${f.preview}…` : ''}${f.prefix ? ` 접두어=${f.prefix}` : ''}`);
-      }
+    if (routed.outOfScope.size) {
+      console.error(`  · 범위 밖(outOfScope) ${[...routed.outOfScope.values()].reduce((a, b) => a + b, 0)}건: ${[...routed.outOfScope].map(([k, n]) => `${k} ${n}`).join(', ')}`);
     }
   }
   if (discover) return;

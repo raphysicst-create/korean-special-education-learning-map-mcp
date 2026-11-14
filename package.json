@@ -1,8 +1,8 @@
 {
   "name": "korean-special-education-learning-map-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "mcpName": "io.github.raphysicst-create/korean-special-education-learning-map-mcp",
-  "description": "한국 2022 개정 특수교육 교육과정(기본 교육과정) 성취기준·내용 체계·해설 MCP 서버 — 공식 고시 원문 수록, 학년군 축 탐색",
+  "description": "한국 2022 개정 특수교육 교육과정(기본 교육과정·특수교육 전문 교과) 성취기준·내용 체계·해설·성격·목표 MCP 서버 — 고시 원문 수록",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/raphysicst-create/korean-special-education-learning-map-mcp#readme",
@@ -22,6 +22,7 @@
     "pipeline:extract": "node pipeline/extract-standards.mjs",
     "pipeline:operation": "node pipeline/extract-operation.mjs",
     "pipeline:details": "node pipeline/extract-details.mjs",
+    "pipeline:guides": "node pipeline/extract-guides.mjs",
     "pipeline:verify": "node pipeline/verify.mjs",
     "pipeline:verify:check": "node pipeline/verify.mjs --check"
   },

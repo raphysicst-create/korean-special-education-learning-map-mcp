@@ -69,7 +69,7 @@ test('get_grade_band_overview: 무인자는 학년군 목록, 인자는 과목�
   assert.equal(all.gradeBands.find((b) => b.id === 'm1-3').standardCount, 3);
   const mid = payload(await call(client, 'get_grade_band_overview', { gradeBand: '중학교' }));
   assert.deepEqual(mid.subjects, [{
-    subjectId: 'career-vocation', subjectKorean: '진로와 직업', standardCount: 3, domains: ['자기 탐색', '직업 세계'],
+    subjectId: 'career-vocation', subjectKorean: '진로와 직업', category: 'basic', standardCount: 3, domains: ['자기 탐색', '직업 세계'],
   }]);
   const bad = await call(client, 'get_grade_band_overview', { gradeBand: '대학' });
   assert.ok(bad.isError);
@@ -100,6 +100,12 @@ test('get_standard: 원문·코드 구조·없는 코드 제안', async () => {
   const miss = await call(client, 'get_standard', { code: '[4국01-09]' });
   assert.ok(miss.isError);
   assert.ok(miss.content[0].text.includes('[4국01-01]'));
+  for (const code of ['', '   ']) {
+    const empty = await call(client, 'get_standard', { code });
+    assert.ok(empty.isError);
+    assert.ok(empty.content[0].text.includes('코드가 비어 있습니다'));
+    assert.ok(!empty.content[0].text.includes('유사 후보'));
+  }
 });
 
 test('get_operation_guidelines: 편성·운영 데이터가 없는 설치본은 오류로 알린다', async () => {
@@ -116,6 +122,26 @@ test('내용 체계·해설 데이터가 없는 설치본: get_content_system은
   const s = payload(await call(client, 'get_standard', { code: '[4국01-01]' }));
   assert.equal(s.results[0].notes, undefined);
   assert.equal(s.results[0].previousEditionNotes, undefined);
+});
+
+test('교육과정 구분(category) 필터와 성격·목표 데이터가 없는 설치본', async () => {
+  const client = await connect();
+  const basic = payload(await call(client, 'list_subjects', { category: '기본 교육과정' }));
+  assert.deepEqual(basic.categories.map((c) => [c.category, c.subjects]), [['basic', 2]]);
+  assert.equal(basic.subjects.length, 2);
+  // 이 설치본에 없는 카테고리·모르는 구분은 오류로 알린다.
+  for (const category of ['이료', '전문 교과', '공통']) {
+    const r = await call(client, 'list_subjects', { category });
+    assert.ok(r.isError, category);
+    assert.ok(r.content[0].text.includes('해석할 수 없습니다'));
+  }
+  const s = payload(await call(client, 'search_standards', { query: '몸짓', category: 'basic' }));
+  assert.ok(s.total > 0 && s.results.every((x) => x.category === 'basic'));
+  for (const [name, args] of [['get_subject_guide', { subject: '국어' }], ['search_subject_guides', { query: '평가' }]]) {
+    const r = await call(client, name, args);
+    assert.ok(r.isError, name);
+    assert.ok(r.content[0].text.includes('수록되지 않은 설치본'), name);
+  }
 });
 
 test('get_learning_roadmap: 학년군 → 영역 → 성취기준', async () => {

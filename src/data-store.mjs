@@ -20,9 +20,8 @@ function readVerified(dataDir, manifest, rel) {
 }
 
 /**
- * v0.1 데이터는 수천 건 규모라 시작 시 전부 로드한다. 카테고리(basic 등)는 폴더 단위이며
- * manifest.files에 기록된 폴더만 수록된 것으로 본다 — v0.2에서 전문 교과 폴더가 늘어나도
- * 로더는 바뀌지 않는다.
+ * 데이터는 수천 건 규모라 시작 시 전부 로드한다. 카테고리는 폴더 단위이며(basic: 기본 교육과정,
+ * special-vocational·ilyo: 특수교육 전문 교과 직업·생활·이료) manifest.files에 기록된 폴더만 수록된 것으로 본다.
  */
 export function createStore(dataDir = defaultDataDir) {
   const manifestPath = join(dataDir, 'manifest.json');
@@ -91,9 +90,18 @@ export function createStore(dataDir = defaultDataDir) {
     }
   }
 
+  // 과목별 '1. 성격 및 목표'와 '3. 교수·학습 및 평가'(【별책 3】·【별책 2】). manifest에 있을 때만 싣는다.
+  const subjectGuides = [];
+  for (const category of categories) {
+    const rel = `${category}/subject-guides.json`;
+    if (manifest.files[rel]) {
+      for (const s of readVerified(dataDir, manifest, rel).subjects) subjectGuides.push({ ...s, category });
+    }
+  }
+
   return {
     manifest, subjects, categories, allStandards, textsByKey, operation,
-    contentSystems, standardNotes, notesByCode,
+    contentSystems, standardNotes, notesByCode, subjectGuides,
     standardsByCode, standardsByKey,
     subjectsById: new Map(subjects.map((s) => [s.id, s])),
     gradeBands: GRADE_BANDS,

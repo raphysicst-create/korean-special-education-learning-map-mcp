@@ -22,13 +22,19 @@ async function connect() {
 const call = async (client, name, args = {}) => JSON.parse((await client.callTool({ name, arguments: args })).content[0].text);
 
 test('data: 과목·성취기준 수가 gates.json과 같다', () => {
-  const basic = gates.categories.basic;
+  const cats = gates.categories;
+  assert.deepEqual(Object.keys(cats).sort(), ['basic', 'ilyo', 'special-vocational']);
+  assert.deepEqual([...store.categories].sort(), Object.keys(cats).sort());
+  const sum = (f) => Object.values(cats).reduce((n, c) => n + f(c), 0);
   const current = store.allStandards.filter((s) => !s.edition);
-  assert.equal(current.length, basic.standards);
-  assert.equal(store.allStandards.length - current.length, Object.values(basic.previousEdition ?? {}).reduce((n, v) => n + v, 0));
-  assert.equal(store.subjects.length, basic.subjects);
-  for (const s of store.subjects) assert.equal(s.standardCount, basic.bySubject[s.id], s.id);
-  assert.equal(store.manifest.counts.standards, basic.standards);
+  assert.equal(current.length, sum((c) => c.standards));
+  assert.equal(store.allStandards.length - current.length, sum((c) => Object.values(c.previousEdition ?? {}).reduce((n, v) => n + v, 0)));
+  assert.equal(store.subjects.length, sum((c) => c.subjects));
+  for (const s of store.subjects) assert.equal(s.standardCount, cats[s.category].bySubject[s.id], s.id);
+  assert.equal(store.manifest.counts.standards, sum((c) => c.standards));
+  // 기본 교육과정 691 + 직업·생활 363 + 이료 436.
+  assert.deepEqual([cats.basic.standards, cats['special-vocational'].standards, cats.ilyo.standards], [691, 363, 436]);
+  assert.deepEqual([cats.basic.subjects, cats['special-vocational'].subjects, cats.ilyo.subjects], [16, 14, 10]);
 });
 
 test('data: 모든 성취기준에 원문·영역·학년군이 있고 원문은 마침표로 끝난다', () => {
@@ -159,14 +165,151 @@ test('data: 검수 보강 — part만 주면 세 학교급, 조항 수 셈법 �
   assert.equal(upper.gradeBand, 'm1-3');
 });
 
-test('data: 내용 체계·해설 수량이 gates.json과 같고, 현행 성취기준 691개 모두 해설이 있다', async () => {
+test('data: 내용 체계·해설 수량이 gates.json과 같고, 기본 교육과정·이료는 모든 성취기준에 해설이 있다', async () => {
   const { notesForStandard } = await import('../src/search.mjs');
-  assert.equal(store.manifest.counts.details.contentItems, gates.details.contentItems);
   assert.deepEqual(store.manifest.counts.details, gates.details);
+  assert.deepEqual(store.manifest.counts.guides, gates.guides);
   for (const s of store.allStandards) {
     const n = notesForStandard(store, s);
-    assert.ok(n && n.explanation.length > 0, `${s.key} 해설 없음`);
+    // 모든 성취기준이 목록 상자(해설 묶음) 안에 있다.
+    assert.ok(n, `${s.key} 해설 묶음 없음`);
+    if (s.category !== 'special-vocational') assert.ok(n.explanation.length > 0, `${s.key} 해설 없음`);
   }
+  // 직업·생활은 원문이 성취기준 일부에만 해설을 달았다(363개 중 269개).
+  const sv = store.allStandards.filter((s) => s.category === 'special-vocational');
+  const explained = sv.filter((s) => notesForStandard(store, s).explanation.length > 0).length;
+  assert.equal(explained, gates.details['special-vocational'].standardsWithExplanation);
+  assert.deepEqual([sv.length, explained], [363, 269]);
+});
+
+test('data: 특수교육 전문 교과 — 원문 표본, 로마 숫자 코드, 고등학교 코드만, 범위 밖 과목', async () => {
+  const client = await connect();
+  const cases = [
+    ['[12직준01-01]', '나의 기본 정보와 특성을 파악한다.', 'special-vocational', '자아 인식'],
+    ['[12작업Ⅰ01-01]', '기초 작업 능력의 의미와 요소를 알고 중요성을 이해한다.', 'special-vocational', '기초 작업 능력의 이해'],
+    ['[12해부01-01]', '해부학의 정의를 알고 기초 용어를 익힌다.', 'ilyo', '해부생리학의 기초'],
+  ];
+  for (const [code, text, category, domain] of cases) {
+    const r = (await call(client, 'get_standard', { code })).results[0];
+    assert.equal(r.code, code);
+    assert.equal(r.officialText, text, code);
+    assert.equal(r.category, category, code);
+    assert.equal(r.domainKorean, domain, code);
+    assert.equal(r.gradeBand, 'h1-3', code);
+    assert.equal(r.curriculumKorean, '선택 중심 교육과정 특수교육 전문 교과');
+  }
+  // ASCII 'I'로 적어도 찾는다.
+  assert.equal((await call(client, 'get_standard', { code: '12작업I01-01' })).results[0].code, '[12작업Ⅰ01-01]');
+  assert.equal((await call(client, 'get_standard', { code: '[12작업II01-01]' })).results[0].subjectKorean, '기초작업기술Ⅱ');
+  // 시각장애인 자립생활은 고등학교 전문 교과(12)만 — 초·중학교 공통 교육과정 코드는 범위 밖이다.
+  const blind = (await call(client, 'list_subjects', { category: '직업·생활' })).subjects.find((s) => s.id === 'independent-living-for-the-blind');
+  assert.deepEqual([blind.gradeBands, blind.standardCount, blind.subjectGroupKorean], [['h1-3'], 49, '직업·생활']);
+  assert.ok(blind.note.includes('공통 교육과정'));
+  const out = await client.callTool({ name: 'get_standard', arguments: { code: '[6시자01-01]' } });
+  assert.ok(out.isError);
+  assert.ok(out.content[0].text.includes('시각장애인 자립생활(h1-3)') && out.content[0].text.includes('수록 범위 밖'), out.content[0].text);
+
+  const lists = await call(client, 'list_subjects', { category: '전문 교과' });
+  assert.deepEqual(lists.categories.map((c) => [c.category, c.subjects, c.standards]), [['special-vocational', 14, 363], ['ilyo', 10, 436]]);
+  assert.equal(lists.subjects.length, 24);
+  assert.ok(lists.subjects.find((s) => s.id === 'pathology').note.includes('시각장애학교'));
+  const bad = await client.callTool({ name: 'list_subjects', arguments: { category: '공통 교육과정' } });
+  assert.ok(bad.isError);
+
+  const search = await call(client, 'search_standards', { query: '안마', category: 'ilyo', limit: 50 });
+  assert.ok(search.total > 0 && search.results.every((r) => r.category === 'ilyo'));
+  const h = await call(client, 'get_grade_band_overview', { gradeBand: '고1~3' });
+  assert.deepEqual([...new Set(h.subjects.map((s) => s.category))], ['basic', 'special-vocational', 'ilyo']);
+  assert.ok(h.allotment);
+  const special = await call(client, 'get_grade_band_overview', { gradeBand: '고1~3', category: '전문 교과' });
+  assert.equal(special.subjects.length, 24);
+  assert.equal(special.allotment, undefined);
+  const bands = await call(client, 'get_grade_band_overview');
+  const basicHigh = store.allStandards.filter((s) => !s.edition && s.category === 'basic' && s.gradeBand === 'h1-3').length;
+  assert.ok(basicHigh > 0);
+  assert.deepEqual(bands.gradeBands.find((b) => b.id === 'h1-3').byCategory, { basic: basicHigh, 'special-vocational': 363, ilyo: 436 });
+  assert.equal(bands.gradeBands.find((b) => b.id === 'e1-2').byCategory, undefined);
+});
+
+test('data: 전문 교과 내용 체계 — 한 열 표, 이료의 하위 영역 열, 원문 영역 이름 차이', async () => {
+  const client = await connect();
+  const job = await call(client, 'get_content_system', { subject: '직업준비', domain: '1' });
+  assert.deepEqual(job.domains[0].gradeBands, ['h1-3']);
+  assert.deepEqual(job.domains[0].contentElements[0], { category: '지식·이해', cells: [{ gradeBands: ['h1-3'], items: ['자신의 기본 정보와 특성', '흥미, 적성, 가치관의 의미'] }] });
+
+  const anat = await call(client, 'get_content_system', { subject: '해부·생리', domain: '해부생리학의 기초' });
+  const d = anat.domains[0];
+  assert.deepEqual(d.subAreas, ['해부학의 이해', '생리학의 이해', '인체의 구성', '인체의 명칭']);
+  assert.deepEqual(d.contentElements[0], { category: '지식·이해', subArea: '해부학의 이해', cells: [{ gradeBands: ['h1-3'], items: ['해부학의 정의', '해부학 기초 용어'] }] });
+  assert.equal(d.contentElements.length, 12);
+  // 해설의 하위 영역 머리글(①)과 같은 이름이다.
+  assert.equal((await call(client, 'get_standard', { code: '12해부01-01' })).results[0].notes.subArea, '해부학의 이해');
+
+  // 원문이 내용 체계와 성취기준 머리글에서 영역 이름을 다르게 적었다 — 각 표기를 그대로 둔다.
+  const anma = await call(client, 'get_content_system', { subject: '안마·마사지·지압', domain: '3' });
+  assert.equal(anma.domains[0].domainKorean, '안마·마사지·지압의 효과');
+  assert.equal((await call(client, 'get_standard', { code: '12안마03-01' })).results[0].domainKorean, '안마, 마사지, 지압의 효과');
+});
+
+test('data: get_subject_guide — 성격·목표, 교수·학습 및 평가', async () => {
+  const client = await connect();
+  const korean = await call(client, 'get_subject_guide', { subject: '국어' });
+  assert.deepEqual(korean.nature.sections.map((s) => s.heading), ['가. 성격']);
+  assert.ok(korean.nature.sections[0].paragraphs[0].startsWith('국어는 대한민국의 공용어로서'));
+  assert.equal(korean.goals.heading, '나. 목표');
+  assert.deepEqual(korean.goals.overall, ['학생은 국어과 학습으로 국어 사용 능력과 의사소통 능력을 함양하여 자기주도적인 국어 생활을 한다.']);
+  assert.deepEqual(korean.goals.items.map((i) => i.no), ['(1)', '(2)', '(3)', '(4)', '(5)']);
+  assert.deepEqual(korean.teachingLearning.parts.map((p) => p.heading), ['(1) 교수·학습의 방향', '(2) 교수·학습 방법']);
+  assert.deepEqual(korean.assessment.parts.map((p) => p.heading), ['(1) 평가의 방향', '(2) 평가 방법']);
+  assert.equal(korean.previousEdition, undefined);
+
+  const onlyGoals = await call(client, 'get_subject_guide', { subject: '직업준비', part: '목표' });
+  assert.deepEqual(Object.keys(onlyGoals).filter((k) => ['nature', 'goals', 'teachingLearning', 'assessment'].includes(k)), ['goals']);
+  assert.equal(onlyGoals.goals.items.length, 4);
+  assert.equal(onlyGoals.subjectGroupKorean, '직업·생활');
+
+  // 통합교과: 성격 머리글 둘, 이전 판(2024-4호) 함께.
+  const right = await call(client, 'get_subject_guide', { subject: '바른 생활' });
+  assert.deepEqual(right.nature.sections.map((s) => s.heading), ['가. 통합교과의 성격', '나. 바른 생활과의 성격']);
+  assert.equal(right.previousEdition[0].edition, '2024-4');
+  // 2024-4호 판 즐거운 생활은 원문에 '(1) 교수·학습의 방향' 머리글이 없다.
+  const joyful = await call(client, 'get_subject_guide', { subject: '즐거운 생활', part: '교수·학습' });
+  assert.equal(joyful.teachingLearning.parts[0].heading, '(1) 교수·학습의 방향');
+  assert.equal(joyful.previousEdition[0].teachingLearning.parts[0].heading, null);
+  // 2026 건강한 생활은 항목이 소제목이고 내용은 하위 문단이다.
+  const healthy = await call(client, 'get_subject_guide', { subject: '건강한 생활', part: '교수·학습' });
+  assert.ok(healthy.teachingLearning.parts[0].items[0].subItems.length > 0);
+  assert.equal(healthy.previousEdition, undefined);
+
+  // 항목 번호는 원문대로 — 정보처리 '(1) 교수·학습의 방향'은 (카) 다음이 (파)다.
+  const info = await call(client, 'get_subject_guide', { subject: '정보처리', part: '교수·학습' });
+  assert.deepEqual(info.teachingLearning.parts[0].items.slice(-2).map((i) => i.no), ['(카)', '(파)']);
+
+  const counts = Object.values(gates.guides).reduce((n, c) => n + c.subjects, 0);
+  assert.equal(counts, 40);
+  const r = await client.callTool({ name: 'get_subject_guide', arguments: { subject: '없는 과목' } });
+  assert.ok(r.isError);
+});
+
+test('data: search_subject_guides — 과목을 가로지르는 키워드 검색', async () => {
+  const client = await connect();
+  const all = await call(client, 'search_subject_guides', { query: '중도중복장애', limit: 50 });
+  assert.equal(all.total, 10);
+  assert.deepEqual([...new Set(all.results.map((r) => r.subjectId))], ['everyday-english', 'korean']);
+  assert.ok(all.results.every((r) => r.text.includes('중도중복장애') || r.matchedSubItems?.some((t) => t.includes('중도중복장애'))));
+  // 기본 교육과정과 전문 교과를 가로지른다. limit을 넘는 결과는 total로만 센다.
+  const cross = await call(client, 'search_subject_guides', { query: '온오프라인', limit: 50 });
+  assert.ok(cross.total > 50 && cross.results.length === 50);
+  const crossAll = await call(client, 'search_subject_guides', { query: '온오프라인', category: '직업·생활', limit: 50 });
+  assert.ok(crossAll.total > 0 && crossAll.results.every((r) => r.category === 'special-vocational'));
+  const ilyo = await call(client, 'search_subject_guides', { query: '실습', category: '이료', part: '평가' });
+  assert.ok(ilyo.total > 0 && ilyo.results.every((r) => r.category === 'ilyo' && r.part === '평가'));
+  const sub = await call(client, 'search_subject_guides', { query: '포트폴리오', subject: '직업준비' });
+  assert.equal(sub.results[0].no, '(카)');
+  assert.ok(sub.results[0].matchedSubItems[0].includes('포트폴리오'));
+  const none = await call(client, 'search_subject_guides', { query: '존재하지않는낱말' });
+  assert.equal(none.total, 0);
+  assert.ok(none.hint);
 });
 
 test('data: get_content_system — 하위 영역·병합 칸·세로쓰기 표기·이전 판', async () => {

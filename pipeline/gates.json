@@ -1,5 +1,5 @@
 {
- "release": "v0.1.0",
+ "release": "v0.2.0",
  "categories": {
   "basic": {
    "subjects": 16,
@@ -25,6 +25,42 @@
    "previousEdition": {
     "joyful-living": 9
    }
+  },
+  "special-vocational": {
+   "subjects": 14,
+   "standards": 363,
+   "bySubject": {
+    "agriculture-life-science": 27,
+    "basic-work-skills-1": 18,
+    "basic-work-skills-2": 24,
+    "deaf-life-and-culture": 21,
+    "food-service": 30,
+    "independent-living-for-the-blind": 49,
+    "information-processing": 21,
+    "job-preparation": 22,
+    "office-support": 32,
+    "personal-services": 15,
+    "social-adaptation": 22,
+    "stable-working-life": 31,
+    "work-and-independence": 28,
+    "workplace-practicum": 23
+   }
+  },
+  "ilyo": {
+   "subjects": 10,
+   "standards": 436,
+   "bySubject": {
+    "acupuncture-moxibustion": 42,
+    "anatomy-physiology": 65,
+    "anma-massage-acupressure": 26,
+    "diagnosis": 45,
+    "electrotherapy": 47,
+    "ilyo-clinical-practice": 59,
+    "ilyo-health": 26,
+    "ilyo-practical-training": 42,
+    "korean-medicine": 34,
+    "pathology": 50
+   }
   }
  },
  "operation": {
@@ -34,30 +70,105 @@
   "tables": 3
  },
  "details": {
-  "contentSystemSubjects": 16,
-  "contentSystemDomains": 47,
-  "contentItems": 1382,
-  "noteSections": 140,
-  "noteGroups": 212,
-  "explanations": 679,
-  "considerations": 667,
-  "standardsWithExplanation": 691,
-  "previousEdition": {
-   "joyful-living": {
-    "contentItems": 21,
-    "explanations": 9,
-    "considerations": 9
-   },
-   "right-living": {
-    "contentItems": 20,
-    "explanations": 10,
-    "considerations": 10
-   },
-   "wise-living": {
-    "contentItems": 22,
-    "explanations": 11,
-    "considerations": 11
+  "basic": {
+   "contentSystemSubjects": 16,
+   "contentSystemDomains": 47,
+   "contentItems": 1382,
+   "noteSections": 140,
+   "noteGroups": 212,
+   "explanations": 679,
+   "considerations": 667,
+   "standardsWithExplanation": 691,
+   "previousEdition": {
+    "joyful-living": {
+     "contentItems": 21,
+     "explanations": 9,
+     "considerations": 9
+    },
+    "right-living": {
+     "contentItems": 20,
+     "explanations": 10,
+     "considerations": 10
+    },
+    "wise-living": {
+     "contentItems": 22,
+     "explanations": 11,
+     "considerations": 11
+    }
    }
+  },
+  "special-vocational": {
+   "contentSystemSubjects": 14,
+   "contentSystemDomains": 67,
+   "contentItems": 719,
+   "noteSections": 67,
+   "noteGroups": 67,
+   "explanations": 269,
+   "considerations": 201,
+   "standardsWithExplanation": 269,
+   "previousEdition": {}
+  },
+  "ilyo": {
+   "contentSystemSubjects": 10,
+   "contentSystemDomains": 66,
+   "contentItems": 1043,
+   "noteSections": 66,
+   "noteGroups": 174,
+   "explanations": 436,
+   "considerations": 183,
+   "standardsWithExplanation": 436,
+   "previousEdition": {}
+  }
+ },
+ "guides": {
+  "basic": {
+   "subjects": 16,
+   "natureParagraphs": 83,
+   "goalItems": 57,
+   "teachingItems": 310,
+   "assessmentItems": 271,
+   "subItems": 457,
+   "previousEdition": {
+    "joyful-living": {
+     "natureParagraphs": 7,
+     "goalItems": 3,
+     "teachingItems": 18,
+     "assessmentItems": 16,
+     "subItems": 51
+    },
+    "right-living": {
+     "natureParagraphs": 7,
+     "goalItems": 3,
+     "teachingItems": 18,
+     "assessmentItems": 16,
+     "subItems": 52
+    },
+    "wise-living": {
+     "natureParagraphs": 7,
+     "goalItems": 3,
+     "teachingItems": 18,
+     "assessmentItems": 16,
+     "subItems": 51
+    }
+   }
+  },
+  "special-vocational": {
+   "subjects": 14,
+   "natureParagraphs": 68,
+   "goalItems": 63,
+   "teachingItems": 259,
+   "assessmentItems": 290,
+   "subItems": 196,
+   "previousEdition": {}
+  },
+  "ilyo": {
+   "subjects": 10,
+   "natureParagraphs": 41,
+   "goalItems": 50,
+   "teachingItems": 140,
+   "assessmentItems": 103,
+   "subItems": 24,
+   "previousEdition": {}
   }
  }
 }

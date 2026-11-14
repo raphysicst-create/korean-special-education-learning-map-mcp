@@ -171,27 +171,50 @@ test('verifyDetails: 출시 데이터는 통과하고, 변조는 잡는다', () 
 });
 
 // 개발 PC에 원본 HWP·PDF가 있으면(저장소 부모 폴더) 파이프라인을 끝까지 다시 돌린 결과가 출시 데이터와 같아야 한다.
+// 별책 3(기본 교육과정)과 별책 2(특수교육 전문 교과) 둘 다 — 내용 체계·해설과 성격·목표, 교수·학습 및 평가.
 const parent = new URL('../../', import.meta.url);
-const hwp26 = '[별책3] 기본 교육과정(nec-2026-2-annex3-hwp).hwp';
-const hasSources = existsSync(new URL(hwp26, parent));
-test('원본 HWP 재추출이 출시 내용 체계·해설과 같다(원본이 있을 때만)', { skip: !hasSources && '원본 HWP 없음' }, async () => {
-  const { extractEdition } = await import('../pipeline/extract-details.mjs');
-  const { hwpBlocks } = await import('../pipeline/hwp-text.mjs');
-  const { mappings } = JSON.parse(readFileSync(new URL('../pipeline/subjects.json', import.meta.url), 'utf8'));
-  const subjects = read('subjects.json').subjects;
-  const { standards } = read('basic/curriculum-standards.json');
-  const texts = new Map(read('basic/standard-texts.json').texts.map((t) => [t.key, t.text]));
-  const cur = extractEdition({
-    blocks: hwpBlocks(readFileSync(new URL(hwp26, parent))), mappings, subjectsById: new Map(subjects.map((s) => [s.id, s])),
-    standards, texts, codeLeads: exceptions.codeLeads, verticalLabels: exceptions.verticalLabels,
+const hwpSources = [
+  ['[별책3] 기본 교육과정(nec-2026-2-annex3-hwp).hwp', 'nec-2026-2-annex3-hwp'],
+  ['[별책2] 유치원, 공통 및 선택 중심 교육과정(nec-2026-2-annex2-hwp).hwp', 'nec-2026-2-annex2-hwp'],
+];
+for (const [file, sourceId] of hwpSources) {
+  const hasSource = existsSync(new URL(file, parent));
+  test(`원본 HWP 재추출이 출시 데이터와 같다 — ${sourceId}(원본이 있을 때만)`, { skip: !hasSource && '원본 HWP 없음' }, async () => {
+    const { extractEdition } = await import('../pipeline/extract-details.mjs');
+    const { extractGuides } = await import('../pipeline/extract-guides.mjs');
+    const { hwpBlocks } = await import('../pipeline/hwp-text.mjs');
+    const { annexCategories, loadSubjectConfig, routeCode } = await import('../pipeline/scope.mjs');
+    const config = loadSubjectConfig();
+    const sources = JSON.parse(readFileSync(new URL('../pipeline/sources.json', import.meta.url), 'utf8'));
+    const src = sources.annexes.find((a) => a.id === sourceId);
+    const categories = annexCategories(src);
+    const subjects = read('subjects.json').subjects;
+    const standards = categories.flatMap((c) => read(`${c}/curriculum-standards.json`).standards);
+    const texts = new Map(categories.flatMap((c) => read(`${c}/standard-texts.json`).texts).map((t) => [t.key, t.text]));
+    const blocks = hwpBlocks(readFileSync(new URL(file, parent)));
+    const route = (c) => routeCode(c, src, config);
+    const cur = extractEdition({
+      blocks, route, subjectsById: new Map(subjects.map((s) => [s.id, s])), standards, texts,
+      codeLeads: exceptions.codeLeads, verticalLabels: exceptions.verticalLabels, domainNames: exceptions.domainNames,
+    });
+    assert.deepEqual(cur.errors, []);
+    assert.equal(cur.subjects.length, subjects.filter((s) => categories.includes(s.category)).length);
+    const guides = extractGuides(blocks, route, { exceptions: { missingPartHeadings: exceptions.missingPartHeadings, itemNumbering: exceptions.itemNumbering } });
+    assert.deepEqual(guides.errors, []);
+    for (const category of categories) {
+      const shippedCs = read(`${category}/content-systems.json`).subjects.filter((s) => !s.edition);
+      const shippedNotes = read(`${category}/standard-notes.json`).subjects.filter((s) => !s.edition);
+      const shippedGuides = read(`${category}/subject-guides.json`).subjects.filter((s) => !s.edition);
+      for (const s of cur.subjects.filter((x) => x.category === category)) {
+        const cs = shippedCs.find((x) => x.subjectId === s.subjectId);
+        assert.deepEqual(s.contentSystem.domains.map(({ standardCodes, ...d }) => d), cs.domains, s.subjectKorean);
+        assert.deepEqual(s.notes.sections, shippedNotes.find((x) => x.subjectId === s.subjectId).sections, s.subjectKorean);
+      }
+      for (const g of guides.subjects.filter((x) => x.category === category)) {
+        const shipped = shippedGuides.find((x) => x.subjectId === g.subjectId);
+        for (const k of ['nature', 'goals', 'teachingLearning', 'assessment']) assert.deepEqual(g[k], shipped[k], `${g.subjectKorean} ${k}`);
+      }
+    }
+    void join;
   });
-  assert.deepEqual(cur.errors, []);
-  const shippedCs = read('basic/content-systems.json').subjects.filter((s) => !s.edition);
-  const shippedNotes = read('basic/standard-notes.json').subjects.filter((s) => !s.edition);
-  for (const s of cur.subjects) {
-    const cs = shippedCs.find((x) => x.subjectId === s.subjectId);
-    assert.deepEqual(s.contentSystem.domains.map(({ standardCodes, ...d }) => d), cs.domains, s.subjectKorean);
-    assert.deepEqual(s.notes.sections, shippedNotes.find((x) => x.subjectId === s.subjectId).sections, s.subjectKorean);
-  }
-  void join;
-});
+}
