@@ -1,11 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { GRADE_BANDS, normalizeCode, parseBasicCode, resolveGradeBand } from './normalize.mjs';
+import {
+  GRADE_BANDS, canonicalCode, normalizeCode, parseBasicCode, resolveGradeBand,
+} from './normalize.mjs';
 import {
   buildRoadmap, gradeBandOverview, resolveSubject, searchStandards, suggestSimilar,
 } from './search.mjs';
 
-const SERVER_INFO = { name: 'korean-special-education-learning-map', version: '0.0.1' };
+const SERVER_INFO = { name: 'korean-special-education-learning-map', version: '0.1.0' };
 const ABOUT_URI = 'about://korean-special-education-learning-map';
 
 const SUBJECT = z.string().max(100).optional()
@@ -61,6 +63,9 @@ function aboutText(store) {
     `- 수록 원문 기준 고시: ${(sourceNotice ?? []).join('; ')}`,
     '- 성취기준 원문은 고시의 별책으로서 저작권법 제7조 제2호에 따라 보호받지 않는 저작물이며, 정확성·추적성을 위해 출처를 표기한다.',
     '- 범위(v0.1): 기본 교육과정 교과 성취기준. 특수교육 전문 교과(직업·생활, 이료)와 공통·선택 중심 교육과정은 아직 수록되지 않았다.',
+    '- 수록 판본: 국가교육위원회 고시 제2026-2호(2026.1.21.) 일부개정 반영본. 이 개정으로 바뀐 초1~2 통합교과(건강한 생활 신설, 즐거운 생활 개편)는 2028.3.1. 시행이며, 그 전까지 학교 현장은 이전 고시(제2024-4호) 판을 따른다 — list_subjects의 note 참고.',
+    "- 중학교 일부 코드는 고시 원문대로 '09'로 적혀 있다(예: [09수학04-01], [09생영01-01]). '9'로 찾아도 된다.",
+    "- 통합교과(바른 생활·슬기로운 생활·건강한 생활·즐거운 생활)는 4개 영역을 중첩한 성취기준이라 영역명을 '통합교과 4개 영역 중첩'으로 표시한다.",
     `- ${DAILY_LIVING_NOTE}`,
     '- 영역명·과목 배정은 PDF 조판에서 기계 추출했으며 파이프라인 검증을 거쳤다. 원문은 고시 PDF와 대조할 것.',
     '- 교육부·국가교육위원회·국립특수교육원의 공식 산출물이 아니며, 개별 학생을 진단하거나 개별화교육계획을 대신하지 않는다.',
@@ -98,6 +103,7 @@ export function createServer(store) {
       subjects: store.subjects.map((s) => ({
         id: s.id, subjectKorean: s.subjectKorean, category: s.category,
         codePrefix: s.codePrefix, gradeBands: s.gradeBands, standardCount: s.standardCount,
+        ...(s.note ? { note: s.note } : {}),
       })),
       note: DAILY_LIVING_NOTE,
     }))
@@ -133,7 +139,7 @@ export function createServer(store) {
       description:
         '성취기준을 코드·키워드(원문 본문·영역명 포함)와 과목·학년군·영역 필터로 검색한다. 결과에 원문이 포함된다.',
       inputSchema: {
-        query: z.string().max(200).optional().describe('키워드 또는 코드 (예: 화폐, 9진01-02)'),
+        query: z.string().max(200).optional().describe('키워드 또는 코드 (예: 화폐, 9진로01-02)'),
         subject: SUBJECT,
         gradeBand: GRADE_BAND,
         domain: z.string().max(100).optional().describe('영역명(부분 일치)'),
@@ -156,21 +162,28 @@ export function createServer(store) {
     {
       title: '성취기준 상세',
       description: '성취기준 코드(공백·대시 이형 무관)로 공식 원문, 과목, 학년군, 영역, 근거 고시를 조회한다.',
-      inputSchema: { code: z.string().max(100).describe('성취기준 코드 (예: [4국01-01])') },
+      inputSchema: { code: z.string().max(100).describe('성취기준 코드 (예: [4국어01-01], 9수학04-01)') },
     },
     guarded(async ({ code }) => {
       const normalized = normalizeCode(code);
-      const hits = store.standardsByCode.get(normalized) ?? [];
+      const canon = canonicalCode(code);
+      const hits = store.standardsByCode.get(canon) ?? [];
       if (hits.length === 0) {
-        return fail(`성취기준 ${normalized}을(를) 찾을 수 없습니다.`,
-          suggestSimilar(normalized, [...store.standardsByCode.keys()]));
+        // 비교는 canonical 키로, 제안은 고시 원문 표기로 — '9수학04-09' → '[09수학04-01]' 계열.
+        const similar = suggestSimilar(canon, [...store.standardsByCode.keys()])
+          .flatMap((k) => store.standardsByCode.get(k).map((s) => s.code));
+        return fail(`성취기준 ${normalized}을(를) 찾을 수 없습니다.`, [...new Set(similar)]);
       }
       return ok({
-        results: hits.map((s) => ({
-          ...s,
-          officialText: store.textsByKey.get(s.key),
-          codeStructure: parseBasicCode(s.code),
-        })),
+        results: hits.map((s) => {
+          const note = store.subjectsById.get(s.subjectId)?.note;
+          return {
+            ...s,
+            officialText: store.textsByKey.get(s.key),
+            codeStructure: parseBasicCode(s.code),
+            ...(note ? { subjectNote: note } : {}),
+          };
+        }),
       });
     })
   );
@@ -193,7 +206,11 @@ export function createServer(store) {
       if (roadmap.standardCount === 0) {
         roadmap.hint = `${meta.subjectKorean}은(는) 이 학년군에 성취기준이 없습니다. 편성 학년군: ${meta.gradeBands.join(', ')}`;
       }
-      return ok({ subjectId, subjectKorean: meta.subjectKorean, ...roadmap });
+      return ok({
+        subjectId, subjectKorean: meta.subjectKorean,
+        ...(meta.note ? { note: meta.note } : {}),
+        ...roadmap,
+      });
     })
   );
 

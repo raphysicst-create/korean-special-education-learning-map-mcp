@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GRADE_BANDS, normalizeCode } from './normalize.mjs';
+import { GRADE_BANDS, canonicalCode } from './normalize.mjs';
 
 const defaultDataDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'kr');
 
@@ -51,8 +51,9 @@ export function createStore(dataDir = defaultDataDir) {
 
   const standardsByCode = new Map();
   const standardsByKey = new Map();
+  // standardsByCode의 키는 canonicalCode — '[09수학04-01]'을 '[9수학04-01]'로도 찾는다.
   for (const s of allStandards) {
-    const code = normalizeCode(s.code);
+    const code = canonicalCode(s.code);
     if (!standardsByCode.has(code)) standardsByCode.set(code, []);
     standardsByCode.get(code).push(s);
     standardsByKey.set(s.key, s);

@@ -6,7 +6,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createStore } from '../src/data-store.mjs';
 import { ABOUT_URI, createServer, TOOL_NAMES } from '../src/server.mjs';
-import { resolveGradeBand, normalizeCode, parseBasicCode } from '../src/normalize.mjs';
+import {
+  canonicalCode, resolveGradeBand, normalizeCode, parseBasicCode,
+} from '../src/normalize.mjs';
 import { buildFixtureDataDir } from './fixtures/build-fixture.mjs';
 
 const dataDir = buildFixtureDataDir();
@@ -34,6 +36,9 @@ test('normalize: 코드·학년군 해석', () => {
     assert.equal(resolveGradeBand(input), id, input);
   }
   assert.equal(resolveGradeBand('대학'), null);
+  assert.equal(parseBasicCode('[09수학04-01]').gradeBand, 'm1-3');
+  assert.equal(canonicalCode('09 수학 04-01'), '[9수학04-01]');
+  assert.equal(canonicalCode('[12국01-03]'), '[12국01-03]');
 });
 
 test('store: manifest 해시가 어긋나면 로드를 거부한다', () => {

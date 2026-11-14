@@ -1,4 +1,4 @@
-import { GRADE_BANDS, normalizeCode, normalizeText } from './normalize.mjs';
+import { GRADE_BANDS, canonicalCode, normalizeText } from './normalize.mjs';
 
 export { normalizeText };
 
@@ -82,13 +82,15 @@ export function searchStandards(store, { query, subjectId, gradeBand, domain, ca
   let candidates = filterStandards(store, { subjectId, gradeBand, domain, category });
   if (query) {
     const q = normalizeText(query);
-    const codeQ = normalizeText(normalizeCode(query));
+    const codeQ = normalizeText(canonicalCode(query));
+    // 부분 코드도 canonicalCode와 같은 규칙으로 맞춘다 — '[9수학04'·'09생영'이 '[09수학04-01]'에 닿게.
+    const partialQ = q.replace(/\s+/g, '').replace(/^(\[?)0+(?=\d)/, '$1');
     candidates = candidates
       .map((s) => {
-        const code = normalizeText(s.code);
+        const code = normalizeText(canonicalCode(s.code));
         let score = 0;
         if (code === codeQ) score += 100;
-        else if (code.includes(q.replace(/\s+/g, ''))) score += 50;
+        else if (partialQ && code.includes(partialQ)) score += 50;
         if (normalizeText(s.domainKorean).includes(q)) score += 8;
         if (normalizeText(store.textsByKey.get(s.key)).includes(q)) score += 5;
         if (normalizeText(s.subjectKorean).includes(q)) score += 3;

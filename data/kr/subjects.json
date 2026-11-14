@@ -1,0 +1,210 @@
+{
+ "version": "kr-special-subjects-v1",
+ "subjects": [
+  {
+   "id": "art",
+   "subjectKorean": "미술",
+   "category": "basic",
+   "codePrefix": "미술",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "e3-4",
+    "e5-6",
+    "m1-3",
+    "h1-3"
+   ],
+   "standardCount": 46
+  },
+  {
+   "id": "career-vocation",
+   "subjectKorean": "진로와 직업",
+   "category": "basic",
+   "codePrefix": "진로",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "m1-3",
+    "h1-3"
+   ],
+   "standardCount": 57
+  },
+  {
+   "id": "everyday-english",
+   "subjectKorean": "생활영어",
+   "category": "basic",
+   "codePrefix": "생영",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "m1-3",
+    "h1-3"
+   ],
+   "standardCount": 31
+  },
+  {
+   "id": "health",
+   "subjectKorean": "보건",
+   "category": "basic",
+   "codePrefix": "보건",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "m1-3",
+    "h1-3"
+   ],
+   "standardCount": 32
+  },
+  {
+   "id": "healthy-living",
+   "subjectKorean": "건강한 생활",
+   "category": "basic",
+   "codePrefix": "건생",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "e1-2"
+   ],
+   "standardCount": 6,
+   "note": "국가교육위원회 고시 제2026-2호(2026.1.21.)로 신설된 통합교과. 부칙에 따라 초등학교 1, 2학년은 2028년 3월 1일부터 시행한다."
+  },
+  {
+   "id": "ict-utilization",
+   "subjectKorean": "정보통신활용",
+   "category": "basic",
+   "codePrefix": "정통",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "m1-3",
+    "h1-3"
+   ],
+   "standardCount": 24
+  },
+  {
+   "id": "joyful-living",
+   "subjectKorean": "즐거운 생활",
+   "category": "basic",
+   "codePrefix": "즐생",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "e1-2"
+   ],
+   "standardCount": 6,
+   "note": "국가교육위원회 고시 제2026-2호(2026.1.21.)로 개편된 성취기준(9개 → 6개, 신체활동 성취기준은 건강한 생활로 이동)을 수록했다. 초등학교 1, 2학년 시행일은 2028년 3월 1일이며, 그 전까지 학교 현장은 이전 고시(제2024-4호) 판 즐거운 생활 성취기준 9개를 따른다."
+  },
+  {
+   "id": "korean",
+   "subjectKorean": "국어",
+   "category": "basic",
+   "codePrefix": "국어",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "e1-2",
+    "e3-4",
+    "e5-6",
+    "m1-3",
+    "h1-3"
+   ],
+   "standardCount": 62
+  },
+  {
+   "id": "mathematics",
+   "subjectKorean": "수학",
+   "category": "basic",
+   "codePrefix": "수학",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "e1-2",
+    "e3-4",
+    "e5-6",
+    "m1-3",
+    "h1-3"
+   ],
+   "standardCount": 148
+  },
+  {
+   "id": "music",
+   "subjectKorean": "음악",
+   "category": "basic",
+   "codePrefix": "음악",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "e3-4",
+    "e5-6",
+    "m1-3",
+    "h1-3"
+   ],
+   "standardCount": 52
+  },
+  {
+   "id": "physical-education",
+   "subjectKorean": "체육",
+   "category": "basic",
+   "codePrefix": "체육",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "e3-4",
+    "e5-6",
+    "m1-3",
+    "h1-3"
+   ],
+   "standardCount": 56
+  },
+  {
+   "id": "practical-arts",
+   "subjectKorean": "실과",
+   "category": "basic",
+   "codePrefix": "실과",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "e5-6"
+   ],
+   "standardCount": 23
+  },
+  {
+   "id": "right-living",
+   "subjectKorean": "바른 생활",
+   "category": "basic",
+   "codePrefix": "바생",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "e1-2"
+   ],
+   "standardCount": 10
+  },
+  {
+   "id": "science",
+   "subjectKorean": "과학",
+   "category": "basic",
+   "codePrefix": "과학",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "e3-4",
+    "e5-6",
+    "m1-3",
+    "h1-3"
+   ],
+   "standardCount": 78
+  },
+  {
+   "id": "social-studies",
+   "subjectKorean": "사회",
+   "category": "basic",
+   "codePrefix": "사회",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "e3-4",
+    "e5-6",
+    "m1-3",
+    "h1-3"
+   ],
+   "standardCount": 49
+  },
+  {
+   "id": "wise-living",
+   "subjectKorean": "슬기로운 생활",
+   "category": "basic",
+   "codePrefix": "슬생",
+   "sourceId": "nec-2026-2-annex3",
+   "gradeBands": [
+    "e1-2"
+   ],
+   "standardCount": 11
+  }
+ ]
+}

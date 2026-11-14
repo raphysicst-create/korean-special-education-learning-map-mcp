@@ -1,6 +1,6 @@
 {
   "name": "korean-special-education-learning-map-mcp",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "mcpName": "io.github.raphysicst-create/korean-special-education-learning-map-mcp",
   "description": "한국 2022 개정 특수교육 교육과정(기본 교육과정) 성취기준 MCP 서버 — 공식 고시 원문 수록, 학년군 축 탐색",
   "type": "module",
@@ -24,7 +24,7 @@
     "pipeline:verify:check": "node pipeline/verify.mjs --check"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.0",
-    "zod": "^3.24.0"
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "zod": "^4.6.7"
   }
 }

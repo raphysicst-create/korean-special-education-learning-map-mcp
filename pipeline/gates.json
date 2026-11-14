@@ -1,0 +1,27 @@
+{
+ "release": "v0.1.0",
+ "categories": {
+  "basic": {
+   "subjects": 16,
+   "standards": 691,
+   "bySubject": {
+    "art": 46,
+    "career-vocation": 57,
+    "everyday-english": 31,
+    "health": 32,
+    "healthy-living": 6,
+    "ict-utilization": 24,
+    "joyful-living": 6,
+    "korean": 62,
+    "mathematics": 148,
+    "music": 52,
+    "physical-education": 56,
+    "practical-arts": 23,
+    "right-living": 10,
+    "science": 78,
+    "social-studies": 49,
+    "wise-living": 11
+   }
+  }
+ }
+}

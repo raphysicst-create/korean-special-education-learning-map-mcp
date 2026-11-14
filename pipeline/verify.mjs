@@ -6,7 +6,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GRADE_BANDS, normalizeCode, parseBasicCode } from '../src/normalize.mjs';
+import { GRADE_BANDS, canonicalCode, parseBasicCode } from '../src/normalize.mjs';
+import { numberingGaps } from './extract-standards.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const defaultDataDir = join(here, '..', 'data', 'kr');
@@ -41,8 +42,8 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
     for (const s of standards) {
       if (keys.has(s.key)) errors.push(`성취기준 key 중복: ${s.key}`);
       keys.add(s.key);
-      if (codes.has(normalizeCode(s.code))) errors.push(`${category} 안 코드 중복: ${s.code}`);
-      codes.add(normalizeCode(s.code));
+      if (codes.has(canonicalCode(s.code))) errors.push(`${category} 안 코드 중복: ${s.code}`);
+      codes.add(canonicalCode(s.code));
       if (s.category !== category) errors.push(`카테고리 폴더 불일치: ${s.key}`);
       if (!subjectById.has(s.subjectId)) errors.push(`미지 과목: ${s.key} → ${s.subjectId}`);
       if (!BAND_IDS.has(s.gradeBand)) errors.push(`미지 학년군: ${s.key} → ${s.gradeBand}`);
@@ -65,6 +66,8 @@ export function verifyAll(dataDir = defaultDataDir, gates = null) {
       }
     }
     for (const key of keys) if (!textKeys.has(key)) errors.push(`원문 없는 성취기준(출시 금지): ${key}`);
+    // 과목·학년군·영역마다 순번이 01부터 이어져야 한다 — 중간 결번은 추출 누락 신호다.
+    for (const g of numberingGaps(standards)) errors.push(`순번 결번(누락 의심): ${category} ${g.group} → ${g.missing.join(',')}`);
     counts.standards += standards.length;
     counts.categories[category] = standards.length;
   }

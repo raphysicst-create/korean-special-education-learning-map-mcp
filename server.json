@@ -6,12 +6,12 @@
     "url": "https://github.com/raphysicst-create/korean-special-education-learning-map-mcp",
     "source": "github"
   },
-  "version": "0.0.1",
+  "version": "0.1.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "korean-special-education-learning-map-mcp",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "transport": { "type": "stdio" }
     }
   ]

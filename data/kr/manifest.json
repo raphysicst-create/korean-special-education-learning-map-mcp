@@ -1,0 +1,24 @@
+{
+ "taxonomyVersion": "v0.1.0",
+ "sourceNotice": [
+  "교육부 고시 제2022-34호(2022.12.22.), 국가교육위원회 고시 제2026-2호(2026.1.21.) 일부개정 포함 【별책 3】 기본 교육과정"
+ ],
+ "counts": {
+  "subjects": 16,
+  "standards": 691,
+  "categories": {
+   "basic": 691
+  }
+ },
+ "files": {
+  "subjects.json": {
+   "sha256": "a0b87ecd2cfa9e2fe09739b41f0b4f9778bfdc916764adcb82d5572058cfee15"
+  },
+  "basic/curriculum-standards.json": {
+   "sha256": "4f161c4b0a71e65985142bcd043e775903e08c7a843946d34fbe669d96c90988"
+  },
+  "basic/standard-texts.json": {
+   "sha256": "5f434f6bda780c05ea6682e4847ee53c11ff8b81f3c2e99747c75e622f5cde57"
+  }
+ }
+}
