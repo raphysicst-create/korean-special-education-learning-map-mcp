@@ -143,3 +143,18 @@ test('data: 즐거운 생활은 최신 판(2026-2)과 시행 중인 이전 판(2
   const e12 = await call(client, 'get_grade_band_overview', { gradeBand: 'e1-2' });
   assert.equal(e12.subjects.find((s) => s.subjectId === 'joyful-living').standardCount, 6);
 });
+
+test('data: 검수 보강 — part만 주면 세 학교급, 조항 수 셈법 통일, 신설 과목 안내, 대문자 학년군', async () => {
+  const client = await connect();
+  const allTables = await call(client, 'get_operation_guidelines', { part: '배당 기준' });
+  assert.deepEqual(allTables.schoolLevels.map((l) => l.allotment.tableNo), ['<표 9>', '<표 10>', '<표 11>']);
+  const overview = await call(client, 'get_operation_guidelines');
+  const sum = (k) => overview.schoolLevels.reduce((n, l) => n + l[k], 0);
+  assert.equal(sum('organizationItems'), gates.operation.organizationItems);
+  assert.equal(sum('criteriaItems'), gates.operation.criteriaItems);
+  const play = await call(client, 'search_standards', { query: '놀이를 자발적으로' });
+  assert.equal(play.results[0].code, '[2건생01-04]');
+  assert.ok(play.results[0].subjectNote.includes('2028년 3월 1일'));
+  const upper = await call(client, 'get_grade_band_overview', { gradeBand: 'M1-3' });
+  assert.equal(upper.gradeBand, 'm1-3');
+});

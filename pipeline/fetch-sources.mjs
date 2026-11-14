@@ -20,22 +20,25 @@ export function pdfPattern(annexNo) {
   return new RegExp(`\\[\\s*별\\s*책\\s*${annexNo}\\s*\\]`);
 }
 
-// 내려받은 파일 이름 끝의 '(출처 id).확장자' 꼬리표.
-const ID_TAG = /\(([a-z0-9-]+)\)\.[a-z]+$/i;
+// 내려받은 파일 이름 끝의 '(출처 id).확장자' 꼬리표 — 'nec-2026-2-annex3'처럼 영문으로 시작하고
+// 하이픈이 있는 것만. 브라우저가 붙이는 '(1)'이나 NCIC 원래 이름의 '(2026.1.21.)'은 꼬리표가 아니다.
+const ID_TAG = /\(([a-z][a-z0-9]*(?:-[a-z0-9]+)+)\)\.[a-z0-9]+$/i;
 
 /**
  * PDF_DIR에서 [별책N] 파일을 찾는다. 같은 별책의 판본이 여럿일 수 있으므로(예: 2024-4호·2026-2호 별책 3)
- * 이름에 이 출처 id 꼬리표가 붙은 파일을 먼저 고르고, 다른 출처 id 꼬리표가 붙은 파일은 건너뛴다.
- * 꼬리표 없는 파일(사람이 직접 받아 둔 것)은 받아 주되, 해시 대조가 판본을 가린다.
+ * 이 출처 id 꼬리표가 붙은 파일을 먼저 고르고, 다른 출처 id 꼬리표가 붙은 파일은 건너뛴다.
+ * 꼬리표 없는 파일(사람이 직접 받아 둔 것)은 isWanted(보통 고정 해시 일치)가 주어지면 그것으로 고른다.
  */
-export function findLocalPdf(names, annexNo, format = 'pdf', id = null) {
+export function findLocalPdf(names, annexNo, format = 'pdf', id = null, isWanted = null) {
   const re = pdfPattern(annexNo);
   const candidates = names.filter((f) => f.toLowerCase().endsWith(`.${format}`) && re.test(f));
   if (id) {
     const exact = candidates.find((f) => ID_TAG.exec(f)?.[1] === id);
     if (exact) return exact;
   }
-  return candidates.find((f) => !ID_TAG.test(f)) ?? null;
+  const untagged = candidates.filter((f) => !ID_TAG.test(f));
+  if (isWanted) return untagged.find(isWanted) ?? null;
+  return untagged[0] ?? null;
 }
 
 // 형식별 파일 첫머리 — PDF와 HWP 5.0(OLE 복합 문서).
@@ -44,10 +47,16 @@ const MAGIC = {
   hwp: (b) => b.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])),
 };
 
-async function resolveAnnex(annex, pdfDir, { pin }) {
+async function resolveAnnex(annex, pdfDir, { pin, allAnnexes }) {
   const format = annex.format ?? 'pdf';
   const label = `[별책${annex.annexNo}] ${format.toUpperCase()}`;
-  let name = findLocalPdf(existsSync(pdfDir) ? readdirSync(pdfDir) : [], annex.annexNo, format, annex.id);
+  // 꼬리표 없는 파일은 고정 해시가 맞을 때만 쓴다. 해시가 아직 없고 같은 별책·형식의 출처가 여럿이면
+  // 어느 판본인지 알 수 없으므로 쓰지 않고 내려받는다.
+  const siblings = allAnnexes.filter((a) => a.annexNo === annex.annexNo && (a.format ?? 'pdf') === format).length;
+  const isWanted = annex.sha256
+    ? (f) => sha256Hex(readFileSync(join(pdfDir, f))) === annex.sha256
+    : (siblings > 1 ? () => false : null);
+  let name = findLocalPdf(existsSync(pdfDir) ? readdirSync(pdfDir) : [], annex.annexNo, format, annex.id, isWanted);
   if (!name) {
     console.error(`… ${label} 로컬 파일 없음 — ${annex.url} 다운로드 시도`);
     const res = await fetch(annex.url);
@@ -85,7 +94,7 @@ async function main() {
   let failures = 0;
   for (const annex of sources.annexes) {
     try {
-      paths[annex.id] = await resolveAnnex(annex, pdfDir, { pin });
+      paths[annex.id] = await resolveAnnex(annex, pdfDir, { pin, allAnnexes: sources.annexes });
     } catch (error) {
       console.error(`✗ ${error.message}`);
       failures += 1;

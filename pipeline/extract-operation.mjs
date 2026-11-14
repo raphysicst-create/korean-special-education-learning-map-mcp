@@ -23,7 +23,7 @@ const PART_B = /^\s*나\.\s*교육과정\s*편성.?운영\s*기준\s*$/;
 const ORGANIZATION = /^\s*1\)\s*편제\s*$/;
 const ALLOTMENT = /^\s*2\)\s*(시간|학점)\s*배당\s*기준\s*$/;
 const TABLE_LABEL = /^\s*(<표\s*\d+>)\s*(<[^>]+>)?\s*$/;
-const NOTE = /^\s*([①②③④⑤⑥⑦⑧⑨⑩])\s*(.+)$/;
+const NOTE = /^\s*([①②③④⑤⑥⑦⑧⑨⑩])\s*(.+)$/s;
 const ITEM = /^\s*(\d{1,2}\)|[가-하]\)|\(\d{1,2}\))\s*(.+)$/s;
 const MARKER_ONLY = /^\s*<(?:개정|신설|삭제)[^>]*>\s*$/;
 const HANGUL_ORDER = '가나다라마바사아자차카타파하';
@@ -72,7 +72,10 @@ export function expectedTableTokens(table) {
   }
   for (const t of table.totals) {
     tokens.push(t.label);
-    for (const col of table.columns) tokens.push(t.values[col]);
+    for (const col of table.columns) {
+      if (t.values[col] === undefined) throw new Error(`표 전사 누락: ${t.label}의 ${col} 칸`);
+      tokens.push(t.values[col]);
+    }
   }
   return tokens;
 }
@@ -103,8 +106,15 @@ export function parseOperationSection(paragraphs, tablesConfig) {
   let mode = null;
   let buf = [];
   let table = null;
+  // 표 칸 대조는 표 다음에 무엇이 오든(주석 ①, 나. 운영 기준, 다음 학교급, 절 끝) 반드시 한다.
+  const checkTable = () => {
+    const diff = compareTableTokens(table, buf);
+    if (diff) throw new Error(`${level.allotment.tableNo} 전사가 HWP 표와 다릅니다 — ${diff}`);
+  };
   const flush = () => {
     if (!level || !mode) return;
+    if (mode === 'allotment-label') throw new Error(`${level.labelKorean}: 배당 기준 다음에 표가 없습니다.`);
+    if (mode === 'table') checkTable();
     if (mode === 'organization') level.organization.items = buildItems(buf);
     if (mode === 'criteria') level.criteria.items = buildItems(buf);
     if (mode === 'notes') level.allotment.notes = buf.map((p) => clean(p));
@@ -151,8 +161,7 @@ export function parseOperationSection(paragraphs, tablesConfig) {
     }
     if (mode === 'table') {
       if (NOTE.test(p)) {
-        const diff = compareTableTokens(table, buf);
-        if (diff) throw new Error(`${level.allotment.tableNo} 전사가 HWP 표와 다릅니다 — ${diff}`);
+        checkTable();
         buf = [p];
         mode = 'notes';
       } else {
@@ -165,6 +174,15 @@ export function parseOperationSection(paragraphs, tablesConfig) {
     buf.push(p);
   }
   flush();
+  // 학교급마다 편제·배당표·운영 기준이 모두 있어야 한다 — 빠지면 고시 구조가 바뀐 것이다.
+  if (!levels.length) throw new Error('학교급 머리(초등학교·중학교·고등학교)를 찾지 못했습니다.');
+  for (const l of levels) {
+    const missing = [
+      !l.partA && '가. 편제와 배당 기준', !l.organization.items.length && '1) 편제',
+      !l.allotment?.tableNo && '2) 배당 기준 표', !l.criteria.items.length && '나. 편성·운영 기준',
+    ].filter(Boolean);
+    if (missing.length) throw new Error(`${l.labelKorean}: ${missing.join(', ')}을(를) 찾지 못했습니다.`);
+  }
   return { sectionTitle, levels };
 }
 

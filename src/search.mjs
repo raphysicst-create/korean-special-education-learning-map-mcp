@@ -60,6 +60,9 @@ export function compactStandard(store, s) {
     domainKorean: s.domainKorean,
     text: store.textsByKey.get(s.key),
     ...(s.edition ? { edition: s.edition, editionNote: s.editionNote } : {}),
+    // 시행 시기 안내가 있는 과목(건강한 생활·즐거운 생활 최신 판)은 검색 결과에도 안내를 붙인다.
+    ...(!s.edition && store.subjectsById?.get(s.subjectId)?.note
+      ? { subjectNote: store.subjectsById.get(s.subjectId).note } : {}),
   };
 }
 
@@ -154,6 +157,11 @@ export function gradeBandOverview(store, gradeBand) {
       subjectId: e.subjectId, subjectKorean: e.subjectKorean, standardCount: e.standardCount,
       domains: [...e.domains.entries()].sort().map(([, name]) => name),
     }));
+}
+
+/** 조항 수: 세부 항목(가)·(1))까지 센다. */
+export function countItems(items) {
+  return (items ?? []).reduce((n, it) => n + 1 + countItems(it.children), 0);
 }
 
 const LEVEL_ALIASES = [

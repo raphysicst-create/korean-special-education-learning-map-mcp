@@ -87,7 +87,7 @@ export function resolveGradeBand(input) {
   const raw = String(input).normalize('NFC').trim();
   const squash = raw.replace(/\s+/g, '').replace(/[-–—~∼〜]/g, '~');
   for (const band of GRADE_BANDS) {
-    if (raw === band.id || squash === band.short || squash === band.labelKorean.replace(/\s+/g, '')) {
+    if (raw.toLowerCase() === band.id || squash === band.short || squash === band.labelKorean.replace(/\s+/g, '')) {
       return band.id;
     }
   }

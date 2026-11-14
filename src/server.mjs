@@ -4,7 +4,7 @@ import {
   GRADE_BANDS, canonicalCode, normalizeCode, parseBasicCode, resolveGradeBand,
 } from './normalize.mjs';
 import {
-  allotmentForBand, buildRoadmap, gradeBandOverview, resolveSchoolLevel, resolveSubject,
+  allotmentForBand, buildRoadmap, countItems, gradeBandOverview, resolveSchoolLevel, resolveSubject,
   searchStandards, suggestSimilar,
 } from './search.mjs';
 
@@ -157,6 +157,21 @@ export function createServer(store) {
       const op = store.operation;
       if (!op) return fail('편성·운영 데이터가 수록되지 않은 설치본입니다.');
       const source = { notice: op.sourceNotice, section: op.section, pages: op.pages };
+      const partsOf = (l) => ({
+        편제: { organization: l.organization },
+        '배당 기준': { allotment: l.allotment },
+        '운영 기준': { criteria: l.criteria },
+      });
+      if (!schoolLevel && part) {
+        // 학교급 없이 부분만 주면 세 학교급의 그 부분을 나란히 준다(예: 배당표 셋 비교).
+        return ok({
+          source,
+          schoolLevels: op.levels.map((l) => ({
+            id: l.id, labelKorean: l.labelKorean, gradeBands: l.gradeBands,
+            ...(l.note ? { note: l.note } : {}), ...partsOf(l)[part],
+          })),
+        });
+      }
       if (!schoolLevel) {
         return ok({
           source,
@@ -165,11 +180,12 @@ export function createServer(store) {
             return {
               id: l.id, labelKorean: l.labelKorean, gradeBands: l.gradeBands,
               allotment: { tableNo: l.allotment.tableNo, unit: l.allotment.unit, total: { label: total.label, values: total.values } },
-              organizationItems: l.organization.items.length, criteriaItems: l.criteria.items.length,
+              // 세부 항목(가)·(1))까지 센 수 — manifest·README의 조항 수와 같은 셈법.
+              organizationItems: countItems(l.organization.items), criteriaItems: countItems(l.criteria.items),
               ...(l.note ? { note: l.note } : {}),
             };
           }),
-          hint: 'schoolLevel(예: 초등학교, 초3~4)을 주면 편제·배당표·운영 기준 원문을 반환한다.',
+          hint: 'schoolLevel(예: 초등학교, 초3~4)을 주면 편제·배당표·운영 기준 원문을, part만 주면 세 학교급의 그 부분을 반환한다.',
         });
       }
       const hit = resolveSchoolLevel(store, schoolLevel);
@@ -177,11 +193,7 @@ export function createServer(store) {
         throw new Error(`학교급 "${schoolLevel}"을(를) 해석할 수 없습니다. 사용 가능: 초등학교, 중학교, 고등학교 또는 학년군(초1~2 … 고1~3).`);
       }
       const l = hit.level;
-      const parts = {
-        편제: { organization: l.organization },
-        '배당 기준': { allotment: l.allotment },
-        '운영 기준': { criteria: l.criteria },
-      };
+      const parts = partsOf(l);
       return ok({
         source, schoolLevel: l.labelKorean, id: l.id, gradeBands: l.gradeBands,
         ...(hit.focus ? { focus: hit.focus } : {}),

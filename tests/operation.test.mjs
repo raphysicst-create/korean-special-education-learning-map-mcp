@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   buildItems, compareTableTokens, crossCheckPdf, expectedTableTokens, operationCounts, parseOperationSection,
 } from '../pipeline/extract-operation.mjs';
+import { findLocalPdf, sha256Hex } from '../pipeline/fetch-sources.mjs';
 import { hwpParagraphs, paraText, readCompoundFile } from '../pipeline/hwp-text.mjs';
 import { verifyOperation } from '../pipeline/verify.mjs';
 import { MIDDLE_SCHOOL_PARAGRAPHS, MIDDLE_SCHOOL_TABLES } from './fixtures/operation-paragraphs.mjs';
@@ -58,6 +59,47 @@ test('배당표 전사가 HWP 표 칸과 한 칸이라도 다르면 실패한다
   assert.match(compareTableTokens(table, expectedTableTokens(table).slice(0, -1)), /HWP="\(없음\)"/);
 });
 
+test('표 아래 주석이 없어도 배당표 전사를 HWP 칸과 대조한다', () => {
+  const noNotes = MIDDLE_SCHOOL_PARAGRAPHS.filter((p) => !/^\s*[①②③]/.test(p));
+  assert.equal(parseOperationSection(noNotes, MIDDLE_SCHOOL_TABLES).levels[0].allotment.notes.length, 0);
+  const bad = clone(MIDDLE_SCHOOL_TABLES);
+  bad.tables['<표 10>'].rows[4].values['1~3학년'] = '467';
+  assert.throws(() => parseOperationSection(noNotes, bad), /전사가 HWP 표와 다릅니다/);
+});
+
+test('학교급에 편제·배당표·운영 기준 중 하나라도 없으면 실패한다', () => {
+  // '나. 교육과정 편성·운영 기준' 절 전체가 빠진 경우(절 끝 머리만 남김).
+  const cut = MIDDLE_SCHOOL_PARAGRAPHS.findIndex((p) => /^\s*나\.\s*교육과정\s*편성.?운영\s*기준/.test(p));
+  const noCriteria = [...MIDDLE_SCHOOL_PARAGRAPHS.slice(0, cut), MIDDLE_SCHOOL_PARAGRAPHS.at(-1)];
+  assert.throws(() => parseOperationSection(noCriteria, MIDDLE_SCHOOL_TABLES), /중학교: 나\. 편성·운영 기준을\(를\) 찾지 못했습니다/);
+  const noTable = MIDDLE_SCHOOL_PARAGRAPHS.filter((p) => !/^\s*<표\s*10>/.test(p));
+  assert.throws(() => parseOperationSection(noTable, MIDDLE_SCHOOL_TABLES), /표 번호가 없습니다|표가 없습니다/);
+});
+
+test('readCompoundFile: 디렉터리 순환은 조용히 넘기지 않고 실패한다', () => {
+  // 최소 CFB(v3, 512바이트 섹터): 섹터0 = FAT, 섹터1 = 디렉터리(루트 + 서로를 가리키는 엔트리 둘).
+  const buf = Buffer.alloc(512 * 3);
+  Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]).copy(buf, 0);
+  buf.writeUInt16LE(9, 0x1e); buf.writeUInt16LE(6, 0x20);
+  buf.writeUInt32LE(1, 0x2c); buf.writeUInt32LE(1, 0x30); buf.writeUInt32LE(4096, 0x38);
+  buf.writeUInt32LE(0xfffffffe, 0x3c); buf.writeUInt32LE(0xfffffffe, 0x44);
+  buf.fill(0xff, 0x4c, 0x200); buf.writeUInt32LE(0, 0x4c);
+  const fat = 512; buf.fill(0xff, fat, fat + 512);
+  buf.writeUInt32LE(0xfffffffd, fat); buf.writeUInt32LE(0xfffffffe, fat + 4);
+  const dir = 1024;
+  const entry = (i, name, type, left, right, child) => {
+    const o = dir + i * 128;
+    buf.write(name, o, 'utf16le'); buf.writeUInt16LE((name.length + 1) * 2, o + 64); buf[o + 66] = type;
+    buf.writeUInt32LE(left, o + 68); buf.writeUInt32LE(right, o + 72); buf.writeUInt32LE(child, o + 76);
+    buf.writeUInt32LE(0xfffffffe, o + 116); buf.writeUInt32LE(0, o + 120);
+  };
+  entry(0, 'Root Entry', 5, 0xffffffff, 0xffffffff, 1);
+  entry(1, 'A', 2, 2, 0xffffffff, 0xffffffff);
+  entry(2, 'B', 2, 1, 0xffffffff, 0xffffffff);
+  entry(3, '', 0, 0xffffffff, 0xffffffff, 0xffffffff);
+  assert.throws(() => readCompoundFile(buf), /두 번 연결/);
+});
+
 test('crossCheckPdf: PDF에 없는 조항을 잡는다', () => {
   const op = parseOperationSection(MIDDLE_SCHOOL_PARAGRAPHS, MIDDLE_SCHOOL_TABLES);
   const pdfLike = MIDDLE_SCHOOL_PARAGRAPHS.join('\n');
@@ -80,8 +122,14 @@ test('verifyOperation: 배당표 합계·조항 번호 이상을 잡는다', () 
 });
 
 // 개발 PC에 원본 HWP가 있으면(저장소 부모 폴더) 출시 데이터와 끝까지 다시 맞춰 본다. CI에는 없어 건너뛴다.
+// 다른 판본 HWP가 함께 있어도 fetch와 같은 규칙(출처 id 꼬리표 → 고정 해시)으로 고른다.
 const pdfDir = join(import.meta.dirname ?? new URL('.', import.meta.url).pathname, '..', '..');
-const hwpName = existsSync(pdfDir) ? readdirSync(pdfDir).find((f) => /\[\s*별\s*책\s*1\s*\].*\.hwp$/.test(f)) : null;
+const hwpSource = JSON.parse(readFileSync(new URL('../pipeline/sources.json', import.meta.url), 'utf8'))
+  .annexes.find((a) => a.role === 'operation');
+const hwpName = existsSync(pdfDir)
+  ? findLocalPdf(readdirSync(pdfDir), hwpSource.annexNo, 'hwp', hwpSource.id,
+    (f) => sha256Hex(readFileSync(join(pdfDir, f))) === hwpSource.sha256)
+  : null;
 test('원본 HWP 재추출이 출시 데이터와 같다(원본이 있을 때만)', { skip: !hwpName && '원본 HWP 없음' }, () => {
   const tablesConfig = JSON.parse(readFileSync(new URL('../pipeline/operation-tables.json', import.meta.url), 'utf8'));
   const op = parseOperationSection(hwpParagraphs(readFileSync(join(pdfDir, hwpName))), tablesConfig);

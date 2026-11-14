@@ -81,19 +81,23 @@ export function readCompoundFile(buf) {
     return readChain(e.start).subarray(0, e.size);
   };
 
-  // 레드-블랙 트리 형제(left/right)와 자식(child)을 따라 경로를 만든다.
+  // 레드-블랙 트리 형제(left/right)와 자식(child)을 따라 경로를 만든다. 깊이 제한 대신 방문 기록으로
+  // 순환을 막고, 범위 밖 번호나 순환이 보이면 조용히 건너뛰지 않고 실패한다.
   const streams = {};
-  const visit = (sid, prefix, depth) => {
-    if (sid === NO_STREAM || depth > 64) return;
+  const seen = new Set();
+  const stack = [[root.child, '']];
+  while (stack.length) {
+    const [sid, prefix] = stack.pop();
+    if (sid === NO_STREAM) continue;
+    if (sid >= entries.length) throw new Error(`손상된 디렉터리: 엔트리 번호 ${sid}가 범위 밖입니다.`);
+    if (seen.has(sid)) throw new Error(`손상된 디렉터리: 엔트리 ${sid}가 두 번 연결되어 있습니다.`);
+    seen.add(sid);
     const e = entries[sid];
-    if (!e) return;
-    visit(e.left, prefix, depth + 1);
-    visit(e.right, prefix, depth + 1);
+    stack.push([e.left, prefix], [e.right, prefix]);
     const path = prefix ? `${prefix}/${e.name}` : e.name;
     if (e.type === 2) streams[path] = readStream(e);
-    else if (e.type === 1) visit(e.child, path, depth + 1);
-  };
-  visit(root.child, '', 0);
+    else if (e.type === 1) stack.push([e.child, path]);
+  }
   return streams;
 }
 

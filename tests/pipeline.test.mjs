@@ -257,6 +257,31 @@ test('fetch: 같은 별책의 판본이 여럿이면 출처 id 꼬리표로 고�
   assert.equal(findLocalPdf(['[별책3] 손으로 받은 파일.pdf'], 3, 'pdf', 'nec-2024-4-annex3'), '[별책3] 손으로 받은 파일.pdf');
 });
 
+test('이전 판 확인은 양방향이다: 최신 판에만 있는 성취기준도 잡고, 신설 과목은 currentOnly로 밝힌다', () => {
+  const { records } = extractStandards(SAMPLE_PDF_TEXT);
+  const current = buildDataset(records, { category: 'basic', sourceId: 'cur', mappings: SAMPLE_MAPPINGS });
+  const prevRecords = records.filter((r) => r.code !== '[9진02-01]');
+  const previous = buildDataset(prevRecords, {
+    category: 'basic', sourceId: 'prev', mappings: SAMPLE_MAPPINGS, edition: '2024-4', editionNote: '현행',
+  });
+  const oneWay = selectPreviousEdition(current, previous, new Set(['korean']));
+  assert.deepEqual(oneWay.failures.map((f) => [f.code, f.reason]), [['[9진02-01]', 'current-edition-only']]);
+  // 과목 전체가 최신 판 신설이면 currentOnly로 밝혀 통과시키고, 이전 판에도 있으면 실패한다.
+  const newSubject = buildDataset(records.filter((r) => r.prefix !== '진'), {
+    category: 'basic', sourceId: 'prev', mappings: SAMPLE_MAPPINGS, edition: '2024-4', editionNote: '현행',
+  });
+  assert.deepEqual(selectPreviousEdition(current, newSubject, new Set(['korean']), new Set(['career-vocation'])).failures, []);
+  const notNew = selectPreviousEdition(current, previous, new Set(['korean']), new Set(['career-vocation']));
+  assert.ok(notNew.failures.every((f) => f.reason === 'not-current-only') && notNew.failures.length === 2);
+});
+
+test('fetch: 꼬리표 없는 파일이 여럿이면 고정 해시로 고르고, "(1)" 같은 이름은 꼬리표로 보지 않는다', () => {
+  const names = ['[별책3] 기본 교육과정 _ 고시 제2026-2호(2026.1.21.).pdf', '[별책3] 기본_고시 제2024-4호(2024.08.16.).pdf'];
+  assert.equal(findLocalPdf(names, 3, 'pdf', 'nec-2024-4-annex3', (f) => f.includes('2024-4')), names[1]);
+  assert.equal(findLocalPdf(names, 3, 'pdf', 'nec-2024-4-annex3', () => false), null);
+  assert.equal(findLocalPdf(['[별책3] 기본(1).pdf'], 3, 'pdf', 'nec-2026-2-annex3'), '[별책3] 기본(1).pdf');
+});
+
 test('fetch: [별책3]만 잡고 [별책30]·[별책13]은 잡지 않는다', () => {
   assert.ok(pdfPattern(3).test('[별책 3] 기본 교육과정.pdf'));
   assert.equal(findLocalPdf(['[별책30] 기계.pdf', '[별책13] x.pdf', '[별책3] 기본.pdf'], 3), '[별책3] 기본.pdf');

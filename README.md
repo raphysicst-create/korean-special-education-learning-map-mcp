@@ -50,7 +50,7 @@
   - `get_standard`는 같은 코드에 대해 두 판을 모두 돌려줍니다.
   - `search_standards`는 판 표시를 붙여 보여 줍니다.
   - `get_learning_roadmap`과 `list_subjects`는 이전 판을 `previousEdition`으로 따로 보여 줍니다.
-  - 다른 15과목은 두 판이 같다는 것을 파이프라인이 확인합니다.
+  - 파이프라인이 양방향으로 확인합니다. 건강한 생활은 제2026-2호로 새로 생겨 이전 판에 없고, 나머지 14과목은 두 판의 성취기준이 같습니다.
 - **수록하지 않는 것:** 창의적 체험활동과 일상생활 활동은 국가 수준 성취기준이 없습니다. 일상생활 활동은 학교가 영역·내용을 정합니다.
 - **이후 버전:** 특수교육 전문 교과(직업·생활, 이료)와 공통·선택 중심 교육과정은 이후 버전에서 다룹니다.
 - **다른 MCP 서버:** 보통교과는 [korean-secondary-learning-map-mcp](https://github.com/raphysicst-create/korean-secondary-learning-map-mcp), 특성화고 전문교과는 [korean-vocational-learning-map-mcp](https://github.com/raphysicst-create/korean-vocational-learning-map-mcp)에 있습니다.

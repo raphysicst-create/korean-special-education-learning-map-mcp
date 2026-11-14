@@ -356,21 +356,34 @@ export function buildDataset(records, {
 
 /**
  * 시행 중인 이전 판(previous)에서 include 과목만 골라 최신 판(current) 데이터에 덧붙인다.
- * include 밖 과목은 두 판이 같아야 한다 — 다르면 그 과목도 판이 갈린 것이므로 실패로 알린다.
+ * include 밖 과목은 두 판이 양방향으로 같아야 한다 — 이전 판에만 있거나, 최신 판에만 있거나,
+ * 원문·영역이 다르면 그 과목도 판이 갈린 것이므로 실패로 알린다. 최신 판에서 새로 생긴 과목은
+ * currentOnlySubjectIds로 밝혀 두며, 그 과목이 이전 판에 있으면 그것도 실패다.
  * 반환: { standards, texts, bySubject: {subjectId: {count, gradeBands}}, failures }
  */
-export function selectPreviousEdition(current, previous, includeSubjectIds) {
+export function selectPreviousEdition(current, previous, includeSubjectIds, currentOnlySubjectIds = new Set()) {
   const failures = [];
   const curByCode = new Map(current.standards.map((s) => [canonicalCode(s.code), s]));
+  const prevByCode = new Map(previous.standards.map((s) => [canonicalCode(s.code), s]));
   const curText = new Map(current.texts.map((t) => [t.key, t.text]));
   const prevText = new Map(previous.texts.map((t) => [t.key, t.text]));
   const keep = [];
   for (const s of previous.standards) {
     if (includeSubjectIds.has(s.subjectId)) { keep.push(s); continue; }
+    if (currentOnlySubjectIds.has(s.subjectId)) {
+      failures.push({ code: s.code, reason: 'not-current-only', preview: '최신 판 신설로 밝힌 과목이 이전 판에도 있다' });
+      continue;
+    }
     const cur = curByCode.get(canonicalCode(s.code));
     if (!cur) { failures.push({ code: s.code, reason: 'previous-edition-only', preview: '이전 판에만 있는 성취기준 — include에 과목을 넣어야 한다' }); continue; }
     if (curText.get(cur.key) !== prevText.get(s.key) || cur.domainKorean !== s.domainKorean) {
       failures.push({ code: s.code, reason: 'previous-edition-differs', preview: `${prevText.get(s.key)?.slice(0, 30)} ↔ ${curText.get(cur.key)?.slice(0, 30)}` });
+    }
+  }
+  for (const s of current.standards) {
+    if (includeSubjectIds.has(s.subjectId) || currentOnlySubjectIds.has(s.subjectId)) continue;
+    if (!prevByCode.has(canonicalCode(s.code))) {
+      failures.push({ code: s.code, reason: 'current-edition-only', preview: '최신 판에만 있는 성취기준 — include나 currentOnly에 과목을 밝혀야 한다' });
     }
   }
   const keys = new Set(keep.map((s) => s.key));
@@ -445,8 +458,13 @@ function main() {
         category: prev.category, sourceId: prev.id, mappings, exceptions, duplicates: px.duplicates,
         edition: prev.edition, editionNote: prev.editionNote,
       });
-      const include = new Set((prev.include?.prefixes ?? []).map((p) => mappings[p]?.id).filter(Boolean));
-      const sel = selectPreviousEdition(built, pBuilt, include);
+      const toIds = (prefixes) => new Set((prefixes ?? []).map((p) => {
+        if (!mappings[p]) throw new Error(`${prev.id}: 대응표에 없는 접두어 ${p}`);
+        return mappings[p].id;
+      }));
+      const include = toIds(prev.include?.prefixes);
+      const currentOnly = toIds(prev.currentOnly?.prefixes);
+      const sel = selectPreviousEdition(built, pBuilt, include, currentOnly);
       built.failures.push(
         ...pBuilt.failures.map((f) => ({ ...f, code: `${prev.edition} ${f.code}` })),
         ...px.rejected.map((r) => ({ code: `${prev.edition} ${r.code}`, reason: 'rejected-list-code', preview: r.context })),
@@ -456,14 +474,24 @@ function main() {
       built.standards.push(...sel.standards);
       built.texts.push(...sel.texts);
       for (const [sid, info] of Object.entries(sel.bySubject)) {
-        const subject = built.subjects.find((s) => s.id === sid);
+        // 최신 판에서 없어진 과목이면 수량 0인 과목으로 두고 이전 판만 단다.
+        let subject = built.subjects.find((s) => s.id === sid);
+        if (!subject) {
+          const [prefix, map] = Object.entries(mappings).find(([, m]) => m.id === sid);
+          subject = {
+            id: sid, subjectKorean: map.subjectKorean, category: annex.category, codePrefix: prefix,
+            sourceId: annex.id, gradeBands: [], standardCount: 0, ...(map.note ? { note: map.note } : {}),
+          };
+          built.subjects.push(subject);
+          built.subjects.sort((a, b) => a.id.localeCompare(b.id, 'en'));
+        }
         subject.previousEdition = {
           edition: prev.edition, sourceId: prev.id, notice: prev.notice, note: prev.editionNote,
           standardCount: info.count, gradeBands: [...info.gradeBands],
         };
         previousCounts[sid] = info.count;
       }
-      console.error(`✓ ${prev.id}: 이전 판 ${sel.standards.length}건 함께 수록(${[...include].join(', ')}) — 나머지 과목은 최신 판과 같음 확인`);
+      console.error(`✓ ${prev.id}: 이전 판 ${sel.standards.length}건 함께 수록(${[...include].join(', ')}) — 최신 판 신설 ${[...currentOnly].join(', ') || '없음'}, 나머지 과목은 두 판이 양방향으로 같음 확인`);
     }
     built.texts.sort((a, b) => a.key.localeCompare(b.key, 'ko'));
     const dir = join(repoRoot, 'data', 'kr', annex.category);
