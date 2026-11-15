@@ -32,17 +32,17 @@
 - **상류 골격 데이터가 없다.** DECK6에는 특수교육이 없으므로 코드·학년군·영역·과목을 모두 PDF에서 직접 추출한다. topics·clusters·선수관계는 없다.
 - **과목 대응표는 사람이 확정한다.** `pipeline/subjects.json`의 `mappings`(카테고리 → 코드 접두어 → 과목)를 discover 보고서와 별책 목차로 대조해 채운다. 추측 금지 — 대응표에도 `outOfScope`에도 없는 접두어는 extract가 `unmapped-prefix`로 실패한다. 기본 교육과정 접두어는 2글자다(`국어`·`수학`·`바생`·`진로`·`정통`·`생영` 등, 코드 예 `[4국어01-01]`). 전문 교과는 `직준`·`해부` 등 2글자와 `작업I`·`작업II`(원문 `[12작업Ⅰ01-01]` — 대응표 키는 로마 숫자를 ASCII로). 카테고리 표시 정보(교육과정·교과(군))는 `categories`.
 - **학년군 코드는 2·4·6·9·12이고, 중학교 일부는 '09'다.** 고시 원문이 수학 규칙성(`[09수학04-xx]`)과 생활영어 중학교(`[09생영…]`)를 '09'로 적는다. `GRADE_BANDS`의 `aliases`로 받고, 조회는 `canonicalCode`(앞자리 0 제거)로 맞춘다. 저장·표시는 원문 표기 그대로.
-- **조판 컷 패턴은 실측으로 보강했다.** 성취기준 목록은 들여쓰기 0~1칸이고, 통합교과 내용 체계 표의 성취기준 열은 40칸 넘게 들여써진다(`MAX_LIST_INDENT`). 통합교과는 목록 뒤에 성취기준마다 해설 머리로 코드·원문을 다시 싣는다(같은 원문이면 `repeatedCodes`로 무해, 다르면 `duplicateCodes` — extract가 `conflicting-duplicate`로 출시를 막고 `exceptions.json`에 원문을 적어야 풀린다). 같은 코드 판정은 `canonicalCode` 기준. 코드 뒤 공백이 빠진 목록 항목도 받고, 조사가 붙은 줄 첫머리 상호참조는 버리되 목록 항목이 없으면 `rejected-list-code`로 실패시킨다. 과목·학년군·영역 순번 결번은 extract와 verify가 모두 실패시킨다(중간 누락 탐지). 조판을 보강할 때마다 `tests/fixtures/sample-pdftotext.mjs`의 `REAL_PDF_TEXT`에 실제 발췌를 추가한다.
+- **조판 컷 패턴은 실측으로 보강했다.** 성취기준 목록은 들여쓰기 0\~1칸이고, 통합교과 내용 체계 표의 성취기준 열은 40칸 넘게 들여써진다(`MAX_LIST_INDENT`). 통합교과는 목록 뒤에 성취기준마다 해설 머리로 코드·원문을 다시 싣는다(같은 원문이면 `repeatedCodes`로 무해, 다르면 `duplicateCodes` — extract가 `conflicting-duplicate`로 출시를 막고 `exceptions.json`에 원문을 적어야 풀린다). 같은 코드 판정은 `canonicalCode` 기준. 코드 뒤 공백이 빠진 목록 항목도 받고, 조사가 붙은 줄 첫머리 상호참조는 버리되 목록 항목이 없으면 `rejected-list-code`로 실패시킨다. 과목·학년군·영역 순번 결번은 extract와 verify가 모두 실패시킨다(중간 누락 탐지). 조판을 보강할 때마다 `tests/fixtures/sample-pdftotext.mjs`의 `REAL_PDF_TEXT`에 실제 발췌를 추가한다.
 - 영역명은 코드의 영역 번호와 같은 번호의 `(N) 영역명` 머리글을 그 코드가 속한 '2. 내용 체계 및 성취기준'(과학은 '내용 체계와 성취기준') 절 안 앞쪽에서 찾아 붙인다(`STANDARDS_SECTION`). '3. 교수·학습 및 평가' 절의 '(1) 평가의 방향' 같은 머리글은 영역에서 제외한다. 통합교과 4과목(바생·슬생·건생·즐생)은 4개 영역 중첩이라 머리글이 없다 — 대응표의 `domainKorean`('통합교과 4개 영역 중첩')을 쓴다.
 - 일상생활 활동·창의적 체험활동은 국가 수준 성취기준(코드)이 없다 — 수록 대상이 아니다.
 - 성취기준 key는 `${category}:${code}` (예: `basic:[4국어01-01]`, `special-vocational:[12작업Ⅰ01-01]`). 코드는 원문 표기 그대로(`displayCode` — 로마 숫자 유지) 저장하고, 비교·조회는 `normalizeCode`/`canonicalCode`(로마 숫자 → ASCII, 앞자리 0 제거)로 한다.
 - **시행 중인 이전 판:** `sources.json`의 `role: standards-previous`(제2024-4호 별책 3)에서 `include.prefixes` 과목(현재 즐생)만 `edition`·`editionNote`를 달아 같은 category 파일에 덧붙인다. key는 `${category}:${code}@${edition}`이다. include 밖 과목은 두 판이 양방향으로 같아야 한다(`selectPreviousEdition` — 이전 판에만/최신 판에만 있는 것, 원문·영역 차이 모두 실패). 최신 판에서 신설된 과목은 `currentOnly.prefixes`(현재 건생)로 밝힌다. 이전 판 예외 보정은 `exceptions.json`에 `basic:[코드]@판` key로 적는다(맨 코드 key는 최신 판에만 적용). 수량(`subjects.standardCount`, gates `standards`)·로드맵·학년군 개요는 최신 판만 센다. 이전 판 수량은 `previousEdition`(subjects, gates)으로 따로 둔다. 2028.3.1. 이후에는 이 source와 `details-previous` source를 지우고 다시 돌린다.
-- **근거 고시는 세 겹이다:** 교육부 고시 제2022-34호 + 국가교육위원회 고시 제2024-4호(별책 3 성취기준 변화 없음) + 제2026-2호(초1~2 통합교과 개편: 건강한 생활 신설, 즐거운 생활 9→6). 수록본은 2026-2호 반영본이다. 2026-2호의 초1~2 시행일은 2028.3.1.이라 그 전까지 현장은 이전 판 즐거운 생활 9개를 따른다 — 이 9개를 이전 판으로 함께 싣고 과목 `note`로 안내한다. 확인 근거는 `sources.json`의 `amendments[]`.
+- **근거 고시는 세 겹이다:** 교육부 고시 제2022-34호 + 국가교육위원회 고시 제2024-4호(별책 3 성취기준 변화 없음) + 제2026-2호(초1\~2 통합교과 개편: 건강한 생활 신설, 즐거운 생활 9→6). 수록본은 2026-2호 반영본이다. 2026-2호의 초1\~2 시행일은 2028.3.1.이라 그 전까지 현장은 이전 판 즐거운 생활 9개를 따른다 — 이 9개를 이전 판으로 함께 싣고 과목 `note`로 안내한다. 확인 근거는 `sources.json`의 `amendments[]`.
 
 ## 편성·운영(별책 1) 파이프라인 (성취기준과 다른 점)
 
 - **조항 원문은 HWP에서 가져온다.** 총론 PDF는 글자 단위로 줄을 바꿔('학부모에 / 게') 줄 이음을 되살릴 수 없다. `pipeline/hwp-text.mjs`가 Node 내장 zlib만으로 HWP 5.0(OLE 복합 문서) 문단을 읽는다. 배포용(복사 방지) HWP는 읽지 않고 실패한다. 추출 결과는 같은 고시의 PDF와 공백 무시 글자 대조를 통과해야 한다.
-- **배당표는 사람이 옮긴다.** `pipeline/operation-tables.json` 값은 고시 표기 그대로(쉼표·괄호 포함). extract-operation이 HWP 표 칸 목록과 순서까지 대조하고, verify가 합계를 검산한다. <표 9> 1~2학년 칸은 교과 구성이 달라 한 칸에 교과별 시수 목록이 들어 있다(`breakdown`).
+- **배당표는 사람이 옮긴다.** `pipeline/operation-tables.json` 값은 고시 표기 그대로(쉼표·괄호 포함). extract-operation이 HWP 표 칸 목록과 순서까지 대조하고, verify가 합계를 검산한다. <표 9> 1\~2학년 칸은 교과 구성이 달라 한 칸에 교과별 시수 목록이 들어 있다(`breakdown`).
 - 구조 해석이 엄격하다: 번호 없는 문단, 표 주석 사이의 예상 밖 문단, 모르는 표 번호는 실패한다. 고시가 바뀌면 실패 메시지를 보고 HWP 구조를 확인한 뒤 고친다.
 - 개발 PC에 원본 HWP가 있으면 `tests/operation.test.mjs`가 재추출 결과를 출시 데이터와 끝까지 맞춰 본다(CI에서는 건너뜀).
 
@@ -50,9 +50,9 @@
 
 - **표는 칸 위치까지 읽는다.** `hwpBlocks`(hwp-text.mjs)가 문단과 표(칸의 행·열·병합 범위, 칸 안 문단)를 레코드 수준으로 돌려준다. 별책 3 PDF는 표 칸을 섞어 내보내 구조를 되살릴 수 없다.
 - **절 경계:** 과목마다 '가. 내용 체계' → '나. 성취기준' → 글상자 '3. 교수·학습 및 평가'. 과목은 성취기준 목록 상자(1x1 표)의 코드 접두어로 정한다.
-- **표 모양 세 가지:** 행 배치(교과 대부분 — '핵심 아이디어' 행, '범주|내용 요소' 머리 행들, 범주 행; 범주 옆 머리 칸은 `subArea`), 열 배치(2026 통합교과 — '핵심 아이디어|범주|내용 요소|성취기준'), 2024 통합교과의 세 과목 나란히 표(`columnSubject`로 과목 열만). 학년군 열 머리는 '초등학교 + 1~2학년'처럼 위아래 머리 칸을 이어 `resolveGradeBand`로 푼다. 내용 칸이 여러 행에 걸치면 실패한다. 글머리표 없는 칸 문단은 앞 항목의 줄바꿈이라 잇는다.
+- **표 모양 세 가지:** 행 배치(교과 대부분 — '핵심 아이디어' 행, '범주|내용 요소' 머리 행들, 범주 행; 범주 옆 머리 칸은 `subArea`), 열 배치(2026 통합교과 — '핵심 아이디어|범주|내용 요소|성취기준'), 2024 통합교과의 세 과목 나란히 표(`columnSubject`로 과목 열만). 학년군 열 머리는 '초등학교 + 1\~2학년'처럼 위아래 머리 칸을 이어 `resolveGradeBand`로 푼다. 내용 칸이 여러 행에 걸치면 실패한다. 글머리표 없는 칸 문단은 앞 항목의 줄바꿈이라 잇는다.
 - **해설 형식 두 가지:** 학년군·영역 절(`sections`) → 하위 영역 묶음(`groups`: 목록 상자 코드·안내·`explanations`·`considerations`). 문단 첫머리 코드(`[코드], [코드]`)가 가리킬 성취기준이고, 코드 없는 고려 사항은 묶음 전체(`codes: []`). 2026 건강한 생활·즐거운 생활은 성취기준마다 상자가 있고 문단이 소제목(`EXPLANATION_LABELS`·`CONSIDERATION_LABELS`)으로 시작한다 — 모르는 소제목은 실패.
-- **HWP 전용 글자:** `cleanText`의 `PUA_MAP`(U+F0810 `|`, U+F09E `·`)과 네모 숫자(U+F02B1~ → ①~)만 받는다. 새 전용 글자는 실패하므로 지면 이미지로 확인해 더한다. PDF 쪽은 같은 기호가 `ž`·U+F000으로 나와 대조 때 지운다.
+- **HWP 전용 글자:** `cleanText`의 `PUA_MAP`(U+F0810 `|`, U+F09E `·`)과 네모 숫자(U+F02B1\~ → ①\~)만 받는다. 새 전용 글자는 실패하므로 지면 이미지로 확인해 더한다. PDF 쪽은 같은 기호가 `ž`·U+F000으로 나와 대조 때 지운다.
 - **예외표 `pipeline/details-exceptions.json`:** `codeLeads`(학년군 숫자가 빠진 첫머리 코드 오기 — 현재 `[6수학01-11], [수학01-12]`), `verticalLabels`(세로쓰기 머리 칸의 띄어쓰기 — 사회 하위 범주). 근거 없이 추가하지 말 것. 쓰이지 않는 항목도 실패한다.
 - **검증:** 목록 상자 원문 = 출시 성취기준 원문, 상자 코드가 그 판 성취기준을 정확히 한 번씩, 영역 번호·이름 일치, 통합교과 표의 성취기준 열 = 성취기준 목록, 모든 문단·항목이 PDF(-layout 또는 -raw)에 공백 무시로 있음. verify는 판 구성·범주 3개·학년군 열·문장 종결(`다.`, 원문 오기 `다,` 2건 허용)·깨진 글자와 `gates.details` 수량을 본다.
 - **이전 판:** `details-previous` include(즐생·바생·슬생)만 edition `2024-4`로 싣는다. 바생·슬생은 성취기준은 같고 해설 문구만 다르다. include 밖 과목은 두 판이 같아야 하고, include 과목이 실제로 같으면 실패한다(`compareEditions`). 이전 판 표는 세 과목 나란히 표에서 과목 열만 뽑는다.
@@ -70,7 +70,7 @@
 
 ## 성격·목표, 교수·학습 및 평가(`pipeline:guides`)
 
-- 과목 절은 details와 같이 찾고(`findSubjectSections` + `classifySection`), 1절은 그 앞 '1. 성격 및 목표' 글상자 ~ '2. 내용 체계' 글상자, 3절은 '3. 교수·학습 및 평가' 글상자 ~ 다음 글상자(과목 제목 등)나 표. 3절 끝 뒤 다음 과목 1절 전까지 3절 항목 같은 문단이 남으면 실패한다.
+- 과목 절은 details와 같이 찾고(`findSubjectSections` + `classifySection`), 1절은 그 앞 '1. 성격 및 목표' 글상자 \~ '2. 내용 체계' 글상자, 3절은 '3. 교수·학습 및 평가' 글상자 \~ 다음 글상자(과목 제목 등)나 표. 3절 끝 뒤 다음 과목 1절 전까지 3절 항목 같은 문단이 남으면 실패한다.
 - 1절 머리글: '가. 성격' 또는 통합교과 '가. 통합교과의 성격'·'나. ○○ 생활과의 성격', 마지막 '○. 목표'(총괄 목표 문단 + '(1)'… 세부 목표). 3절: '가. 교수·학습'·'나. 평가' 각각 '(1) …의 방향'·'(2) … 방법'(`PART_IDS` — 모르는 머리글 실패), 항목 '(가)'…(`ITEM_ORDER`, (하) 다음 (거)…), 번호 없는 문단은 앞 항목의 `subItems`.
 - 원문 오류는 `details-exceptions.json`에 적은 것만 받는다: `missingPartHeadings`(첫 부분 머리글 누락 → `heading: null`), `itemNumbering`(결번·중복 번호, 번호는 원문대로). 키는 '과목 id[@판]|자리', 판 없는 키는 두 판 모두. 쓰이지 않는 항목도 실패.
 - verify: 성격·목표 문장은 '다.'로 끝나고, '다.'로 끝나지 않는 3절 항목(2026 건강한 생활·즐거운 생활의 소제목형)에는 하위 문단이 있어야 한다. 수량은 `gates.guides`(카테고리별).
@@ -88,7 +88,7 @@
 
 1. 버전 bump — **파일 4개, 값 6곳**: `package.json`, `package-lock.json`(최상위 `version` + `packages[""].version`), `server.json`(서버·packages), `src/server.mjs`의 `SERVER_INFO.version`.
 2. `npm run pipeline:extract -- --record-gates && npm run pipeline:details -- --record-gates && npm run pipeline:guides -- --record-gates && npm run pipeline:verify && npm test` (gates.release·manifest.taxonomyVersion이 새 버전을 따른다)
-3. `npm publish --browser=false` (2FA) — 저장소 폴더에서. Windows PowerShell은 실행 정책이 `npm.ps1`을 막으므로 `npm.cmd publish --browser=false`. 게시 직후 1~2분은 레지스트리에 `0.0.0-stage`만 보인다.
+3. `npm publish --browser=false` (2FA) — 저장소 폴더에서. Windows PowerShell은 실행 정책이 `npm.ps1`을 막으므로 `npm.cmd publish --browser=false`. 게시 직후 1\~2분은 레지스트리에 `0.0.0-stage`만 보인다.
 4. `mcp-publisher login github`(raphysicst-create 계정, 기기 코드) → `mcp-publisher publish`. 확인: `https://registry.modelcontextprotocol.io/v0/servers?search=korean-special-education`
 
 ## 관련 저장소
