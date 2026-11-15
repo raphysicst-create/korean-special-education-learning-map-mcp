@@ -2,7 +2,7 @@
 
 한국 2022 개정 특수교육 교육과정 성취기준 MCP 서버 (npm: `korean-special-education-learning-map-mcp`, 레지스트리: `io.github.raphysicst-create/korean-special-education-learning-map-mcp`). v0.2 범위: 【별책 3】 기본 교육과정(category `basic`)과 【별책 2】 특수교육 전문 교과(직업·생활 `special-vocational`, 이료 `ilyo`)의 성취기준 원문 전량, 내용 체계 표·성취기준 해설·적용 시 고려 사항·영역 안내, 과목별 성격·목표와 교수·학습 및 평가 + 【별책 1】 총론 중 Ⅲ-3 기본 교육과정 편성·운영(편제·배당표·운영 기준). stdio 완전 로컬, 도구 9종.
 
-**현재 상태(v0.2.0, 미게시 — v0.1.0도 미게시):** `data/kr/{basic,special-vocational,ilyo}`에 성취기준 1,490건(40과목: 691·363·436), 내용 체계(`content-systems.json`)·해설(`standard-notes.json`)·성격·목표와 교수·학습 및 평가(`subject-guides.json`), `data/kr/operation-guidelines.json`에 편성·운영(학교급 3, 편제 14항, 배당표 3개, 운영 기준 45항). 수량은 `pipeline/gates.json`. 원본은 국가교육위원회 고시 제2026-2호 반영본 별책 3·별책 2 PDF·HWP, 2024-4호 판 별책 3·별책 2 PDF·HWP(이전 판·대조용), 별책 1 HWP·PDF(NCIC, `pipeline/sources.json`에 해시 고정). 게시(npm·레지스트리)는 사람이 한다. 첫 실행 절차는 `docs/first-run.md`, v0.2 설계는 `docs/plan-v0.2-annex2-and-subject-guides.md`.
+**현재 상태(v0.2.0, 2026-11-15 npm·MCP 레지스트리 게시 — 첫 게시판, v0.1.0은 게시하지 않음):** `data/kr/{basic,special-vocational,ilyo}`에 성취기준 1,490건(40과목: 691·363·436), 내용 체계(`content-systems.json`)·해설(`standard-notes.json`)·성격·목표와 교수·학습 및 평가(`subject-guides.json`), `data/kr/operation-guidelines.json`에 편성·운영(학교급 3, 편제 14항, 배당표 3개, 운영 기준 45항). 수량은 `pipeline/gates.json`. 원본은 국가교육위원회 고시 제2026-2호 반영본 별책 3·별책 2 PDF·HWP, 2024-4호 판 별책 3·별책 2 PDF·HWP(이전 판·대조용), 별책 1 HWP·PDF(NCIC, `pipeline/sources.json`에 해시 고정). 게시(npm·레지스트리)는 사람이 한다. 첫 실행 절차는 `docs/first-run.md`, v0.2 설계는 `docs/plan-v0.2-annex2-and-subject-guides.md`.
 
 ## 명령
 
@@ -78,9 +78,9 @@
 
 ## 로드맵
 
-- v0.1: 기본 교육과정 (category `basic`, 성취기준·내용 체계·해설) + 총론 기본 교육과정 편성·운영 — 데이터 완료, 게시 대기
+- v0.1: 기본 교육과정 (category `basic`, 성취기준·내용 체계·해설) + 총론 기본 교육과정 편성·운영 — 단독 게시하지 않고 v0.2.0에 포함해 게시
 - 다음 고시 개정 시: NCIC 「우리나라 교육과정 > 원문 및 해설서 > 2022 개정 시기 > 특수교육(YYYY.MM)」에서 별책 3 PDF·HWP를 받아 `sources.json`의 url·notice·sha256을 바꾸고 파이프라인을 다시 돌린다. 판본 간 성취기준 비교로 개정 범위를 확인해 `amendments[]`에 기록한다.
-- v0.2: 특수교육 전문 교과 직업·생활·이료 (【별책 2】, category `special-vocational`·`ilyo`) + 전 과목 성격·목표, 교수·학습 및 평가(`get_subject_guide`·`search_subject_guides`) — 데이터 완료, 게시 대기
+- v0.2: 특수교육 전문 교과 직업·생활·이료 (【별책 2】, category `special-vocational`·`ilyo`) + 전 과목 성격·목표, 교수·학습 및 평가(`get_subject_guide`·`search_subject_guides`) — 2026-11-15 npm·MCP 레지스트리 게시
 - 이후 후보: 교과(군)별 '교육과정 설계의 개요', 창의적 체험활동·일상생활 활동(성취기준 없음, 영역·활동 원문), 별책 2 특수교육 공통 교육과정(국어(청각장애) 등 — 코드가 공통 교육과정과 다른 꼴 포함)
 - v0.3 후보: 기본 ↔ 공통 교육과정 성취기준 연계 (통합학급·개별화교육계획용, korean-secondary-learning-map-mcp와 교차)
 
@@ -88,8 +88,8 @@
 
 1. 버전 bump — **파일 4개, 값 6곳**: `package.json`, `package-lock.json`(최상위 `version` + `packages[""].version`), `server.json`(서버·packages), `src/server.mjs`의 `SERVER_INFO.version`.
 2. `npm run pipeline:extract -- --record-gates && npm run pipeline:details -- --record-gates && npm run pipeline:guides -- --record-gates && npm run pipeline:verify && npm test` (gates.release·manifest.taxonomyVersion이 새 버전을 따른다)
-3. `npm publish --browser=false` (2FA)
-4. `mcp-publisher publish`
+3. `npm publish --browser=false` (2FA) — 저장소 폴더에서. Windows PowerShell은 실행 정책이 `npm.ps1`을 막으므로 `npm.cmd publish --browser=false`. 게시 직후 1~2분은 레지스트리에 `0.0.0-stage`만 보인다.
+4. `mcp-publisher login github`(raphysicst-create 계정, 기기 코드) → `mcp-publisher publish`. 확인: `https://registry.modelcontextprotocol.io/v0/servers?search=korean-special-education`
 
 ## 관련 저장소
 

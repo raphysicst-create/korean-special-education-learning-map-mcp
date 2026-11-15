@@ -1,7 +1,8 @@
 # Changelog
 
-## 0.2.0 (미게시)
+## 0.2.0 (2026-11-15)
 
+- 첫 게시판이다: npm `korean-special-education-learning-map-mcp@0.2.0`, MCP 레지스트리 `io.github.raphysicst-create/korean-special-education-learning-map-mcp` 0.2.0. 0.1.0·0.0.1은 게시하지 않았고 그 변경은 이 판에 모두 들어 있다.
 - 【별책 2】 특수교육 전문 교과를 수록했다(category `special-vocational`·`ilyo`). 원본은 국가교육위원회 고시 제2026-2호 반영본 별책 2 PDF(`fd8a7f3d…cfac`)·HWP(`0850e7a0…72bc`), NCIC 배포본이다.
   - 직업·생활 14과목 363개, 이료 10과목 436개, 모두 고등학교(코드 12). 총론 <표 8>의 24과목 전부다.
   - 별책 2는 유치원·공통·선택 중심 교육과정이 한 파일이다. 대응표(`pipeline/subjects.json`)가 카테고리별로 나뉘고, 범위 밖 접두어는 `outOfScope`에 근거와 함께 적는다. 어디에도 없는 접두어는 지금처럼 실패한다. 시각장애인 자립생활·농인의 생활과 문화는 공통 교육과정(초·중)과 접두어가 같아 학년군 코드(`bandCodes: ["12"]`)로 가른다.
@@ -21,7 +22,7 @@
 - verify: 내용 체계·해설과 성격·목표 수량 게이트가 카테고리별이다(`gates.details`·`gates.guides`, `manifest.counts` 같은 구성). 카테고리에 게이트가 없거나, 성취기준과 과목의 카테고리가 다르면 실패한다.
 - 테스트 92건: 별책 2·이전 판 실측 발췌 fixture(`tests/fixtures/annex2-blocks.mjs`)와 단위 테스트(`tests/annex2.test.mjs`)를 더했다. 원본 HWP가 있으면 별책 2 재추출도 출시 데이터와 맞춰 본다.
 
-## 0.1.0 (미게시)
+## 0.1.0 (게시하지 않음 — 0.2.0에 포함)
 
 - 수록 데이터: 【별책 3】 기본 교육과정 교과 성취기준 691개(16과목, 5개 학년군). 국가교육위원회 고시 제2026-2호(2026.1.21.) 일부개정 반영본 PDF(NCIC 배포본, SHA-256 `7e1dc061…f1e5`)에서 추출했다.
 - 개정 고시 확인 결과:
@@ -81,7 +82,7 @@
   - 출시 데이터 회귀 테스트(`tests/data.test.mjs`)를 추가했다.
   - 원본 HWP가 있으면 내용 체계·해설 재추출이 출시 데이터와 같은지 본다(`tests/details.test.mjs`, CI에서는 건너뜀).
 
-## 0.0.1 (미게시)
+## 0.0.1 (게시하지 않음)
 
 - 저장소 뼈대: 직업계 MCP 구조 이식(순수 ESM, 의존성 2종, manifest 해시 검증).
 - 파이프라인: PDF 직접 추출(fetch --pin / discover / extract / verify). 상류 골격 데이터 없음.

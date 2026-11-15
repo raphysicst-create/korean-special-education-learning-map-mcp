@@ -130,3 +130,4 @@ npm run pipeline:verify
 - **guides:** 기본 교육과정 16과목(이전 판 바른 생활·슬기로운 생활·즐거운 생활), 직업·생활 14과목, 이료 10과목. 원문 오류 4곳을 `details-exceptions.json`에 적었다 — 2024-4호 즐거운 생활 '(1) 교수·학습의 방향' 머리글 누락, 정보처리 (타)·(자) 결번, 농생명 (다) 중복. 미술 두 항목은 PDF가 가운뎃점을 'ž'로 내보내 대조기가 가운뎃점을 빼고 비교하게 했다.
 - **지면 대조:** 해부·생리 '해부생리학의 기초'(4개 하위 영역 열)·'골격계통' 표, 정보처리 '(1) 교수·학습의 방향'의 (카)·(파)를 PDF 지면 이미지와 대조해 일치를 확인했다.
 - **verify·test:** 과목 40 · 성취기준 1,490 · 내용 체계 180개 영역 · 해설 1,384·고려 사항 1,051문단 · 성격·목표/교수·학습 및 평가 40과목. 테스트 92건 통과, `npm pack --dry-run` 604 kB(풀면 4.1 MB).
+- **게시(2026-11-15, 사람이 실행):** v0.1.0은 게시하지 않고 0.2.0을 첫 판으로 냈다. npm `korean-special-education-learning-map-mcp@0.2.0`(PowerShell에서 `npm.cmd login` → `npm.cmd publish --browser=false`), MCP 레지스트리 0.2.0(`mcp-publisher` 1.8.1 `login github` → `publish`, 상태 active·최신 확인).
